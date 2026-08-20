@@ -1,16 +1,17 @@
-# Only needed if you deploy the Worker by connecting it to GitHub (Workers Builds) or wrangler.
-# If you create the Worker the easy way — "Create Worker" -> Edit code -> paste worker.js -> Deploy,
-# then bind the KV namespace in the dashboard — you don't need this file at all.
+# Only needed if you deploy the Worker by connecting it to GitHub (Workers Builds).
+# If you create the Worker the easy way — "Create Worker" -> Edit code -> paste worker.js -> Deploy —
+# you don't need this file at all.
+#
+# The Worker reads/writes a Google Sheet with a service account, so there is NO KV binding.
+# Configure these on the Worker instead (Settings > Variables and Secrets), not here:
+#   GCP_SA_EMAIL        (secret)   service account email
+#   GCP_SA_PRIVATE_KEY  (secret)   the private_key from the key JSON
+#   SHEET_ID            (variable) optional; defaults to the schedule workbook baked into worker.js
+#   ALLOWED_ORIGIN      (variable) optional; e.g. https://jmarrujo-jpg.github.io
+#   API_TOKEN           (secret)   optional shared-token gate
 #
 # The Worker's name in the Cloudflare dashboard must match "name" below, or wrangler will deploy
-# to a Worker with this name instead. Change it to match your Worker if you named it differently.
-name = "daily-schedule-api"
+# to a Worker with this name instead. Change it to match your Worker if you named it something else.
+name = "daily-schedule"
 main = "worker.js"
 compatibility_date = "2024-11-06"
-
-# The board store. Create a KV namespace (Storage & Databases > KV > Create) and paste its id
-# here, or bind it in the dashboard (Worker > Settings > Bindings > Add > KV namespace) with the
-# variable name BOARDS. The binding name MUST be BOARDS — the Worker reads env.BOARDS.
-[[kv_namespaces]]
-binding = "BOARDS"
-id = "828715952ac74b47803beee4ffbdc913"

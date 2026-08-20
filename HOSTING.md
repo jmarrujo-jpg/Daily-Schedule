@@ -1,83 +1,87 @@
-# Hosting: GitHub Pages front end + Cloudflare Worker backend
+# Hosting: GitHub Pages front end + Cloudflare Worker backend + Google Sheet store
 
 ```
-Browser (github.io page)  ──fetch {fn,args}──▶  Cloudflare Worker  ──▶  KV namespace
-   docs/index.html                                worker.js              (board:YYYY-MM-DD)
+Browser (github.io page)  ──fetch {fn,args}──▶  Cloudflare Worker  ──▶  Google Sheet
+   docs/index.html                                worker.js            (service account)
 ```
 
 - **GitHub Pages** serves the UI (`docs/index.html`) — a plain `*.github.io` URL, no custom
   domain needed.
-- **Cloudflare Worker** (`worker.js`) is the backend: it stores each day's board as one JSON
-  document in a **Cloudflare KV** namespace (keyed `board:YYYY-MM-DD`). Self-contained — paste
-  it into a dashboard Worker, no build step.
-- Every screen shares one board: the shop-floor **TV** (Board view) and the office **editor**
-  (Edit view) read/write the same key, so edits show up on the TV within ~12 s.
+- **Cloudflare Worker** (`worker.js`) is the backend. It reads/writes a **Google Sheet** directly
+  with a **service account** (no Apps Script). Self-contained — paste it into a dashboard Worker,
+  no build step.
+- Until `API_URL` in `docs/index.html` points at the Worker, the app still runs entirely in the
+  browser's `localStorage` (single device, no sync). Point it at the Worker and every screen shares
+  one live board.
 
-> The app also works with **no Worker at all** — leave `API_URL` blank and each browser keeps its
-> own board in `localStorage`. That's fine for a single device, but the TV and the editor won't
-> share data until you point them at the Worker below.
+## The Google Sheet
+Workbook: `1rlfSNCsAdKroo-ZfalsLXWm3xVSiqd5DoAXtQuTBriI` (baked into `worker.js` as the default;
+override with a `SHEET_ID` variable if it ever changes). The Worker creates two tabs automatically
+on first use:
 
-> Uses GitHub Pages, not Cloudflare Pages, for the front end.
+- **`Roster`** — the dropdown data. Column A is names, one per row (header `Name` in A1). Edit it
+  right in the sheet and the app picks the names up (positions, Absent, Vacation dropdowns).
+- **`Boards`** — the saved day, one row per date:
+  `A Date | B Lines Running | C Change-Overs | D Absent | E Vacation | F Updated | G Board JSON`.
+  Columns B–E are human-readable so you can scan history; column G holds the full board so the app
+  reloads any day exactly.
 
 ---
 
-## Step 1 — Create the Cloudflare Worker
-1. Cloudflare → **Workers & Pages → Create → Create Worker** → name it e.g.
-   `daily-schedule` → Deploy.
+## Step 1 — Service account can reach the sheet
+1. In Google Cloud Console, create (or reuse) a **service account** and download its **JSON key**.
+   *(You can reuse the same service account as the Inventory / Litho apps.)*
+2. **Share the sheet** with the service account's email (`…@…iam.gserviceaccount.com`, the
+   `client_email` in the key JSON) — give it **Editor** (the app writes days back).
+3. Google Cloud Console → **APIs & Services → Library → Google Sheets API → Enable** (on the
+   service account's project).
+
+## Step 2 — Create the Cloudflare Worker
+1. Cloudflare → **Workers & Pages → Create → Create Worker** → name it `daily-schedule` → Deploy.
 2. **Edit code** → delete the template → paste all of **`worker.js`** → **Deploy**.
+3. **Settings → Variables and Secrets → Add:**
+   - `GCP_SA_EMAIL` (Secret) = the service account email.
+   - `GCP_SA_PRIVATE_KEY` (Secret) = the `private_key` value from the key JSON (paste verbatim; the
+     `\n`s are fine).
+   - `SHEET_ID` (Variable, optional) — only if the workbook changes.
+   - `ALLOWED_ORIGIN` (Variable, optional) = `https://jmarrujo-jpg.github.io` to lock CORS.
+   - `API_TOKEN` (Secret, optional) = a long random string for a shared-token gate.
+   - **Deploy again** after adding variables.
+4. Copy the Worker URL, e.g. `https://daily-schedule.<subdomain>.workers.dev`.
+5. Test: open that URL in a browser → `{"ok":true,"service":"daily-schedule-api","build":"v2-sheets"}`.
 
-## Step 2 — Give it a KV namespace (this is the board store)
-1. Cloudflare → **Storage & Databases → KV → Create a namespace** → name it e.g.
-   `daily-schedule-boards`.
-2. Back on the Worker → **Settings → Bindings → Add → KV namespace**:
-   - **Variable name:** `BOARDS`  *(must be exactly `BOARDS` — the Worker reads `env.BOARDS`)*
-   - **KV namespace:** the one you just created.
-3. **Deploy** again so the binding takes effect.
+> There is **no KV namespace** anymore — the store is the Google Sheet. If you set up KV earlier you
+> can delete that binding; it's unused.
 
-## Step 3 — Optional variables
-Worker → **Settings → Variables and Secrets → Add** (each is optional):
-- `ALLOWED_ORIGIN` (Variable) = `https://<youruser>.github.io` to lock CORS to your page
-  (leave unset to allow any origin).
-- `API_TOKEN` (Secret) = a long random string, if you want a shared-token gate.
-- Deploy again after adding variables.
-
-Copy the Worker URL, e.g. `https://daily-schedule.<subdomain>.workers.dev`, and test it in a
-browser → `{"ok":true,"service":"daily-schedule-api","build":"v1"}`.
-
-## Step 4 — Point the front end at the Worker
-In `docs/index.html`, set near the top:
+## Step 3 — Point the front end at the Worker
+In `docs/index.html`, near the top:
 ```js
 var API_URL = 'https://daily-schedule.<subdomain>.workers.dev';  // your Worker URL
-var API_SECRET = '';   // set only if you added API_TOKEN in Step 3
+var API_SECRET = '';   // set only if you added API_TOKEN in Step 2
 ```
 Commit. (Or paste me the Worker URL and I'll set it and push.)
 
-## Step 5 — Turn on GitHub Pages
+## Step 4 — Turn on GitHub Pages
 1. GitHub repo → **Settings → Pages**.
-2. **Source: Deploy from a branch** → Branch `claude/daily-schedule-review-ofnigl`, Folder
-   **`/docs`** → Save. *(The repo root has `Index.html` with a capital I, which Pages won't serve
-   as an index — `/docs` has the correct lowercase `index.html`.)*
+2. **Source: Deploy from a branch** → Branch `claude/daily-schedule-review-ofnigl`, Folder **`/docs`**
+   → Save. *(The repo root also has `Index.html`, but Pages serves the lowercase `docs/index.html`.)*
 3. Wait ~1 min → open the `https://<youruser>.github.io/daily-schedule/` URL.
 
-## Step 6 — Verify shared state
-1. Open the page on two devices (or two tabs). Bottom-right shows the version tag (e.g. `v2`).
-2. On one, switch to **Edit**, pick a can size / type a count — the save chip reads **Saved**.
-3. On the other, in **Board** view, the number appears within ~12 s.
-4. If the Worker is unreachable, the board shows a red **"Could not reach the board server"**
-   note and the save chip turns red — nothing is silently lost.
+## Step 5 — Verify
+- In **Edit**, add a name under **People / Roster** → a new row appears in the `Roster` tab.
+- Fill a line and switch days and back → the day reloads; a row for that date appears in the
+  `Boards` tab with the readable summary + JSON.
 
 ## Troubleshooting
-- Save chip stays red **"Not saved — KV namespace BOARDS is not bound"** → do Step 2 (add the
-  `BOARDS` binding) and redeploy.
-- Save chip **"Not saved — Unauthorized"** → `API_SECRET` in `docs/index.html` doesn't match the
-  Worker's `API_TOKEN`.
-- Board won't load / **CORS error** in dev-tools → `API_URL` in `docs/index.html` doesn't match
-  the Worker URL, or `ALLOWED_ORIGIN` doesn't match your github.io origin (or leave it unset).
+- Save chip says **"Service account not configured"** → the Worker secrets didn't save, or you
+  didn't redeploy after adding them.
+- **"Sheets API 403"** → the sheet isn't shared with the service account email, or the Sheets API
+  isn't enabled on its project.
+- **CORS error in dev-tools** → `API_URL` in `docs/index.html` doesn't match the Worker URL, or
+  `ALLOWED_ORIGIN` doesn't match your github.io origin (or leave it unset to allow all).
 - Page 404 "provide an index.html" → Pages Source is the repo root; switch it to **`/docs`**.
-- Two screens don't match → confirm both have the same `API_URL` (not one blank / one set); a
-  blank `API_URL` means that device is on local-only `localStorage`.
 
 ## Security note
 With a plain github.io page, the optional `API_TOKEN` lives in the page source, so it only deters
-casual access. It's fine for an internal floor board; if you later want a real login gate, we can
-move the page onto a Cloudflare-proxied domain and add Cloudflare Access (Google SSO).
+casual access. Fine for an internal floor tool; for a real login gate we can move the page onto a
+Cloudflare-proxied domain and add Cloudflare Access (Google SSO).
