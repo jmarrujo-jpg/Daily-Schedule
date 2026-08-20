@@ -12,7 +12,7 @@
     --bg:#0d1117; --panel:#161d26; --panel2:#1e2732; --edge:#2b3947; --edge2:#3a4b5c;
     --text:#eef3f8; --muted:#8593a0; --dim:#54626f;
     --amber:#ffb300; --amber-d:#c98a00;
-    --green:#29c467; --red:#ef4444; --blue:#3aa0ff;
+    --green:#29c467; --red:#ef4444; --blue:#3aa0ff; --purple:#a175ff;
     --disp:'Barlow Condensed', sans-serif;
     --body:'Barlow', sans-serif;
     --mono:'IBM Plex Mono', monospace;
@@ -84,12 +84,14 @@
     border:1px solid rgba(58,160,255,.4);background:rgba(58,160,255,.08);border-radius:6px;padding:5px 12px}
   .standing small{color:var(--muted);font-weight:600;letter-spacing:.04em;margin-left:8px;text-transform:none;font-family:var(--body);font-size:12px}
 
-  /* crew */
+  /* crew — each position holds up to 3 people (primary + up to 2 more, e.g. a trainee) */
   .ops{display:grid;grid-template-columns:1fr 1fr;gap:5px 20px;margin-top:1px}
-  .op{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-bottom:1px dotted #26313d;padding:4px 0}
+  .op{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px dotted #26313d;padding:4px 0}
   .op .role{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.05em;flex:none}
-  .op .who{font-weight:600;font-family:var(--disp);font-size:20px;letter-spacing:.01em;text-align:right}
-  .op .who.empty{color:var(--dim);font-weight:500;font-size:16px}
+  .op .who{display:flex;flex-direction:column;align-items:flex-end;gap:0;font-family:var(--disp);text-align:right}
+  .op .who .n1{font-weight:600;font-size:20px;letter-spacing:.01em}
+  .op .who .nx{font-weight:600;font-size:13.5px;color:var(--amber);letter-spacing:.02em}
+  .op .who.empty{font-weight:500;font-size:16px;color:var(--dim)}
 
   .lc-foot{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:auto;padding-top:8px;border-top:1px solid var(--edge)}
   .lc-foot .ends-lbl{font-family:var(--disp);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
@@ -131,6 +133,11 @@
   .fld select.status-sel{font-family:var(--disp);font-weight:700;letter-spacing:.04em}
   .fld input.mono,.fld input[inputmode]{font-family:var(--mono)}
   .fld textarea{resize:vertical;min-height:52px;line-height:1.35}
+  .names{display:flex;flex-direction:column;gap:5px}
+  .names input.trainee{border-style:dashed}
+  .addname{align-self:flex-start;background:transparent;border:1px dashed var(--edge2);color:var(--muted);
+    border-radius:5px;padding:5px 10px;font-size:12px;font-weight:600;letter-spacing:.02em}
+  .addname:hover{color:var(--amber);border-color:var(--amber-d)}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .ops-edit{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .subhead{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
@@ -189,7 +196,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v4';
+var APP_VERSION = 'v5';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -214,23 +221,26 @@ const LINE_SIZES = {
 };
 const ALL_SIZES = [...new Set(Object.values(LINE_SIZES).flat())];
 
-/* Crew positions shown on each line (Run 1st is now a line STATUS, not a position). */
+/* Crew positions shown on each line. Each holds up to 3 people (MAX_PER_POS)
+   — normally one operator, occasionally a 2nd/3rd when someone is training. */
 const OP_ROLES = [
   ["backup","Back Up"], ["bodymaker","Bodymaker"],
   ["doubleSeamer","Double Seamer"], ["palletizer","Palletizer"],
   ["frameStraps","Frame & Straps"], ["forklift","Forklift"]
 ];
+const MAX_PER_POS = 3;
 
 /* Line status — what the line is doing today. Each has its own color on the board.
    key ""  = idle. `pill` is the short board label; `label` is the dropdown text. */
 const STATUS = {
-  ""    : { pill:"Idle",    label:"— Idle —",              color:"var(--edge2)", fg:"var(--muted)" },
-  run1  : { pill:"Run 1st", label:"Run 1st",               color:"var(--green)", fg:"#0d1117" },
-  run2  : { pill:"Run 2nd", label:"Run 2nd",               color:"var(--blue)",  fg:"#0d1117" },
-  rwr   : { pill:"RWR",     label:"RWR (Run When Ready)",   color:"var(--amber)", fg:"#161009" },
-  co    : { pill:"CO",      label:"CO (Change Over)",       color:"var(--red)",   fg:"#ffffff" }
+  ""     : { pill:"Idle",    label:"— Idle —",             color:"var(--edge2)", fg:"var(--muted)" },
+  run1   : { pill:"Run 1st", label:"Run 1st",              color:"var(--green)", fg:"#0d1117" },
+  run2   : { pill:"Run 2nd", label:"Run 2nd",              color:"var(--blue)",  fg:"#0d1117" },
+  backup : { pill:"Back Up", label:"Back Up",              color:"var(--purple)",fg:"#ffffff" },
+  rwr    : { pill:"RWR",     label:"RWR (Run When Ready)",  color:"var(--amber)", fg:"#161009" },
+  co     : { pill:"CO",      label:"CO (Change Over)",      color:"var(--red)",   fg:"#ffffff" }
 };
-const STATUS_ORDER = ["", "run1", "run2", "rwr", "co"];
+const STATUS_ORDER = ["", "run1", "run2", "backup", "rwr", "co"];
 function statusOf(l){ return STATUS[l.status] ? l.status : ""; }
 
 const DEFAULT_LINE_ORDER = ["6","5","4","2"];
@@ -273,23 +283,31 @@ function num(v){ const n=parseFloat(String(v).replace(/,/g,'')); return isFinite
 function commas(n){ return n==null||n===''?'':Number(n).toLocaleString('en-US'); }
 
 /* A line is one production line's plan for the day.
-   status:  "" idle / run1 / run2 / rwr / co  (drives the colored pill + border).
+   status:  "" idle / run1 / run2 / backup / rwr / co  (drives the colored pill + border).
+   ops[k]:  ARRAY of up to 3 names for that position (extras = trainees / 2nd person).
    order:   how many were ordered. BLANK = standing/ongoing order (we always run it).
    made:    optional — how many already made, for a smaller order that spans days. */
 function blankLine(lineNo){
   return { lineNo:String(lineNo), status:"", size:"", cust:"", desc:"",
-    ops:{backup:"",bodymaker:"",doubleSeamer:"",palletizer:"",frameStraps:"",forklift:""},
+    ops:{backup:[""],bodymaker:[""],doubleSeamer:[""],palletizer:[""],frameStraps:[""],forklift:[""]},
     order:"", made:"", ends1:"", ends2:"" };
 }
 function blankBoard(date){
   return { date, lines: DEFAULT_LINE_ORDER.map(blankLine),
     staff:{absent:"",vacation:"",changeover:"",presses:"",custodian:""} };
 }
+/* Names for a position, always as an array of strings (max MAX_PER_POS). */
+function opArr(l,k){
+  let v = l.ops ? l.ops[k] : undefined;
+  if(!Array.isArray(v)) v = (v==null || v==='') ? [] : [v];
+  return v.map(s=>String(s==null?'':s)).slice(0,MAX_PER_POS);
+}
 /* Older saved boards may miss newer fields — fill them in so render is safe. */
 function normalizeLine(l){
   const b=blankLine(l.lineNo||"");
-  l.ops = Object.assign({}, b.ops, l.ops||{});
-  for(const k in b) if(l[k]===undefined) l[k]=b[k];
+  l.ops = l.ops || {};
+  OP_ROLES.forEach(([k])=>{ const a=opArr(l,k); l.ops[k]=a.length?a:[""]; });
+  for(const k in b) if(k!=='ops' && l[k]===undefined) l[k]=b[k];
   if(!l.cust && l.of) l.cust=l.of;                 // migrate legacy customer field
   if(l.status===undefined || l.status===null){     // migrate legacy changeover flag
     l.status = l.changeover ? 'co' : (l.size ? 'run1' : '');
@@ -383,8 +401,11 @@ function renderBoard(){
   const cards = board.lines.map(l=>{
     const st=statusOf(l), sd=STATUS[st];
     const ops = OP_ROLES.map(([k,label])=>{
-      const who=(l.ops&&l.ops[k])?l.ops[k]:'';
-      return `<div class="op"><span class="role">${label}</span><span class="who ${who?'':'empty'}">${esc(who)||'—'}</span></div>`;
+      const names = opArr(l,k).map(s=>s.trim()).filter(Boolean);
+      const who = names.length
+        ? `<span class="who"><span class="n1">${esc(names[0])}</span>${names.slice(1).map(n=>`<span class="nx">+ ${esc(n)}</span>`).join('')}</span>`
+        : `<span class="who empty">—</span>`;
+      return `<div class="op"><span class="role">${label}</span>${who}</div>`;
     }).join('');
     const ends=[l.ends1,l.ends2].filter(Boolean).map(esc).join(' · ');
     return `<div class="line-card${st===''?' idle':''}" style="border-top-color:${sd.color}">
@@ -432,13 +453,20 @@ function statusOptions(cur){
   const c = STATUS[cur] ? cur : "";
   return STATUS_ORDER.map(k=>`<option value="${k}" ${k===c?'selected':''}>${STATUS[k].label}</option>`).join('');
 }
+function posInputs(l, idx, k){
+  const arr = opArr(l,k); const shown = arr.length?arr:[""];
+  const inputs = shown.map((n,i)=>
+    `<input class="${i>0?'trainee':''}" value="${esc(n)}" data-line="${idx}" data-op="${k}" data-i="${i}"
+       placeholder="${i===0?'name':'2nd / trainee'}">`).join('');
+  const add = shown.length<MAX_PER_POS ? `<button class="addname" data-line="${idx}" data-addop="${k}">＋ add person</button>` : '';
+  return `<div class="names">${inputs}${add}</div>`;
+}
 function renderEdit(){
   const lineCards = board.lines.map((l,idx)=>{
     const sizeOpts = sizeOptionsFor(l.lineNo, l.size);
     const sd = STATUS[statusOf(l)];
     const opFields = OP_ROLES.map(([k,label])=>`
-      <div class="fld"><label>${label}</label>
-        <input value="${esc(l.ops[k]||'')}" data-line="${idx}" data-op="${k}"></div>`).join('');
+      <div class="fld"><label>${label}</label>${posInputs(l,idx,k)}</div>`).join('');
     return `<div class="ecard" style="border-top-color:${sd.color}">
       <div class="eh">
         <span class="lc-no">Line</span>
@@ -457,7 +485,7 @@ function renderEdit(){
       <div class="fld"><label>Note <span class="hint">(optional)</span></label>
         <input value="${esc(l.desc)}" data-line="${idx}" data-f="desc" placeholder="anything the crew should know"></div>
 
-      <div class="subhead">Positions</div>
+      <div class="subhead">Positions <span class="hint">(up to ${MAX_PER_POS} per spot — add a 2nd for a trainee)</span></div>
       <div class="ops-edit">${opFields}</div>
 
       <div class="subhead">Order &amp; ends</div>
@@ -517,7 +545,11 @@ document.getElementById('view').addEventListener('input', e=>{
   const li = t.getAttribute('data-line');
   if(li!==null){
     const idx=+li, l=board.lines[idx];
-    if(t.dataset.op){ l.ops[t.dataset.op]=t.value; scheduleSave(); return; }
+    if(t.dataset.op!==undefined && t.dataset.i!==undefined){   // a position name
+      const k=t.dataset.op, i=+t.dataset.i;
+      if(!Array.isArray(l.ops[k])) l.ops[k]=[];
+      l.ops[k][i]=t.value; scheduleSave(); return;
+    }
     if(t.dataset.f){
       const f=t.dataset.f; l[f]=t.value;
       if(f==='status'){ scheduleSave(); render(); return; }        // recolor card + header
@@ -540,6 +572,10 @@ document.getElementById('view').addEventListener('input', e=>{
 document.getElementById('view').addEventListener('click', async e=>{
   const t=e.target;
   if(t.id==='addLine'){ board.lines.push(blankLine("")); scheduleSave(); render(); }
+  else if(t.dataset.addop!==undefined){                          // add a person to a position
+    const idx=+t.dataset.line, k=t.dataset.addop, arr=board.lines[idx].ops[k];
+    if(Array.isArray(arr) && arr.length<MAX_PER_POS){ arr.push(""); scheduleSave(); render(); }
+  }
   else if(t.dataset.rmline!==undefined){ board.lines.splice(+t.dataset.rmline,1); scheduleSave(); render(); }
   else if(t.id==='clearDay'){ if(confirm('Clear all entries for this day?')){ board=blankBoard(curDate); scheduleSave(); render(); } }
   else if(t.id==='copyPrev'){ await copyFromYesterday(); }
