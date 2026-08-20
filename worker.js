@@ -83,6 +83,20 @@ async function handle(fn, args, env) {
       const list = await env.BOARDS.list({ prefix: 'board:' });
       return list.keys.map((k) => k.name);
     }
+    // The people roster — one shared list of names for every day, used to fill
+    // the position dropdowns. Stored under the fixed key "roster". (Later this
+    // can be sourced from a Google Sheet instead of KV.)
+    case 'getRoster': {
+      const v = await env.BOARDS.get('roster');
+      return v ? JSON.parse(v) : [];
+    }
+    case 'setRoster': {
+      const list = args[0];
+      if (!Array.isArray(list)) throw new Error('setRoster needs an array of names');
+      const clean = list.map((n) => String(n == null ? '' : n).trim()).filter(Boolean).slice(0, 500);
+      await env.BOARDS.put('roster', JSON.stringify(clean));
+      return true;
+    }
     default:
       throw new Error('Unknown function: ' + fn);
   }

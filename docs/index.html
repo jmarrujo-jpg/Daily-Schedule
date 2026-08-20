@@ -134,7 +134,8 @@
   .fld input.mono,.fld input[inputmode]{font-family:var(--mono)}
   .fld textarea{resize:vertical;min-height:52px;line-height:1.35}
   .names{display:flex;flex-direction:column;gap:5px}
-  .names input.trainee{border-style:dashed}
+  .names select{background:var(--panel2);color:var(--text);border:1px solid var(--edge2);border-radius:5px;padding:8px 9px;font-size:15px;width:100%}
+  .names select.trainee{border-style:dashed;color:var(--amber)}
   .addname{align-self:flex-start;background:transparent;border:1px dashed var(--edge2);color:var(--muted);
     border-radius:5px;padding:5px 10px;font-size:12px;font-weight:600;letter-spacing:.02em}
   .addname:hover{color:var(--amber);border-color:var(--amber-d)}
@@ -153,6 +154,15 @@
   .savechip.saving .dot{background:var(--amber)}
   .savechip.error{color:var(--red)}
   .savechip.error .dot{background:var(--red)}
+
+  /* roster manager */
+  .roster{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  .chip{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--edge2);
+    border-radius:6px;padding:5px 5px 5px 12px;font-family:var(--disp);font-weight:600;font-size:16px}
+  .chip button{background:transparent;border:none;color:var(--dim);font-size:18px;line-height:.9;padding:0 5px;cursor:pointer}
+  .chip button:hover{color:var(--red)}
+  .roster-add{display:flex;gap:8px;max-width:440px}
+  .roster-add input{flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--edge2);border-radius:5px;padding:9px 10px;font-size:15px}
 
   /* fullscreen tweaks */
   body.fs .topbar .hide-fs{display:none}
@@ -196,7 +206,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v5';
+var APP_VERSION = 'v6';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -222,11 +232,11 @@ const LINE_SIZES = {
 const ALL_SIZES = [...new Set(Object.values(LINE_SIZES).flat())];
 
 /* Crew positions shown on each line. Each holds up to 3 people (MAX_PER_POS)
-   — normally one operator, occasionally a 2nd/3rd when someone is training. */
+   — normally one operator, occasionally a 2nd/3rd when someone is training.
+   (Back Up is a line STATUS now, not a position.) */
 const OP_ROLES = [
-  ["backup","Back Up"], ["bodymaker","Bodymaker"],
-  ["doubleSeamer","Double Seamer"], ["palletizer","Palletizer"],
-  ["frameStraps","Frame & Straps"], ["forklift","Forklift"]
+  ["bodymaker","Bodymaker"], ["doubleSeamer","Double Seamer"],
+  ["palletizer","Palletizer"], ["frameStraps","Frame & Straps"], ["forklift","Forklift"]
 ];
 const MAX_PER_POS = 3;
 
@@ -253,8 +263,9 @@ const STAFF_SECTIONS = [
 /* ============================ Storage layer ============================
    When API_URL is set, reads/writes go to the Cloudflare Worker (KV-backed) so
    every screen shares one board. Otherwise the board is kept in this browser's
-   localStorage. Failures are thrown, never swallowed, so a save can't silently
-   vanish — the caller surfaces them on the save chip. */
+   localStorage. The people roster is stored separately (one list, all days) so
+   it can later be backed by a Google Sheet. Failures are thrown, never
+   swallowed, so a save can't silently vanish. */
 const Store = {
   async get(key){
     if(API_URL) return await callApi('getBoard',[key]);
@@ -263,7 +274,16 @@ const Store = {
   },
   async set(key,val){
     if(API_URL){ await callApi('setBoard',[key,val]); return; }
-    localStorage.setItem(key, JSON.stringify(val)); // throws on quota/full — surfaced by caller
+    localStorage.setItem(key, JSON.stringify(val));
+  },
+  async getRoster(){
+    if(API_URL) return await callApi('getRoster',[]);
+    const raw = localStorage.getItem('roster');
+    return raw ? JSON.parse(raw) : [];
+  },
+  async setRoster(list){
+    if(API_URL){ await callApi('setRoster',[list]); return; }
+    localStorage.setItem('roster', JSON.stringify(list));
   }
 };
 
@@ -271,6 +291,7 @@ const Store = {
 let mode = "board";
 let curDate = todayStr();
 let board = null;
+let roster = [];   // list of people's names — fills the position dropdowns
 let saveTimer = null, saving = false, saveError = null, loadError = null;
 
 function todayStr(d=new Date()){ return d.toLocaleDateString('en-CA'); } // YYYY-MM-DD local
@@ -289,7 +310,7 @@ function commas(n){ return n==null||n===''?'':Number(n).toLocaleString('en-US');
    made:    optional — how many already made, for a smaller order that spans days. */
 function blankLine(lineNo){
   return { lineNo:String(lineNo), status:"", size:"", cust:"", desc:"",
-    ops:{backup:[""],bodymaker:[""],doubleSeamer:[""],palletizer:[""],frameStraps:[""],forklift:[""]},
+    ops:{bodymaker:[""],doubleSeamer:[""],palletizer:[""],frameStraps:[""],forklift:[""]},
     order:"", made:"", ends1:"", ends2:"" };
 }
 function blankBoard(date){
@@ -321,6 +342,10 @@ function normalizeBoard(bd){
   return bd;
 }
 
+async function loadRoster(){
+  try{ const r = await Store.getRoster(); roster = Array.isArray(r)?r:[]; }
+  catch(e){ roster = []; }
+}
 async function loadBoard(date){
   loadError = null;
   try{
@@ -350,6 +375,18 @@ function updateSaveChip(){
   c.classList.toggle('error', !!saveError && !saving);
   c.querySelector('.txt').textContent = saveError ? ('Not saved — '+saveError) : (saving ? 'Saving…' : 'Saved');
   c.title = saveError || '';
+}
+
+/* ---- Roster (people) ---- */
+function rosterAdd(name){
+  name=(name||'').trim(); if(!name) return false;
+  if(roster.some(x=>x.toLowerCase()===name.toLowerCase())) return true;  // already there
+  roster.push(name); saveRoster(); return true;
+}
+function rosterRemove(i){ if(i>=0 && i<roster.length){ roster.splice(i,1); saveRoster(); } }
+async function saveRoster(){
+  try{ await Store.setRoster(roster); }
+  catch(e){ alert('Could not save the roster: '+(e && e.message ? e.message : e)); }
 }
 
 /* ============================ Helpers ============================ */
@@ -453,13 +490,24 @@ function statusOptions(cur){
   const c = STATUS[cur] ? cur : "";
   return STATUS_ORDER.map(k=>`<option value="${k}" ${k===c?'selected':''}>${STATUS[k].label}</option>`).join('');
 }
+/* One position dropdown: — none —, every roster name, then "＋ Add new name…".
+   If the stored value isn't in the roster it's kept so nothing is lost. */
+function nameOptions(cur){
+  const names = roster.slice().sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
+  let opts = `<option value="">— none —</option>`;
+  let matched=false;
+  names.forEach(n=>{ const sel = (n===cur); if(sel) matched=true;
+    opts += `<option value="${esc(n)}" ${sel?'selected':''}>${esc(n)}</option>`; });
+  if(cur && !matched){ opts += `<option value="${esc(cur)}" selected>${esc(cur)} (not in list)</option>`; }
+  opts += `<option value="__add__">＋ Add new name…</option>`;
+  return opts;
+}
 function posInputs(l, idx, k){
   const arr = opArr(l,k); const shown = arr.length?arr:[""];
-  const inputs = shown.map((n,i)=>
-    `<input class="${i>0?'trainee':''}" value="${esc(n)}" data-line="${idx}" data-op="${k}" data-i="${i}"
-       placeholder="${i===0?'name':'2nd / trainee'}">`).join('');
+  const selects = shown.map((n,i)=>
+    `<select class="${i>0?'trainee':''}" data-line="${idx}" data-op="${k}" data-i="${i}">${nameOptions(n)}</select>`).join('');
   const add = shown.length<MAX_PER_POS ? `<button class="addname" data-line="${idx}" data-addop="${k}">＋ add person</button>` : '';
-  return `<div class="names">${inputs}${add}</div>`;
+  return `<div class="names">${selects}${add}</div>`;
 }
 function renderEdit(){
   const lineCards = board.lines.map((l,idx)=>{
@@ -485,7 +533,7 @@ function renderEdit(){
       <div class="fld"><label>Note <span class="hint">(optional)</span></label>
         <input value="${esc(l.desc)}" data-line="${idx}" data-f="desc" placeholder="anything the crew should know"></div>
 
-      <div class="subhead">Positions <span class="hint">(up to ${MAX_PER_POS} per spot — add a 2nd for a trainee)</span></div>
+      <div class="subhead">Positions <span class="hint">(pick from the roster — add a 2nd for a trainee)</span></div>
       <div class="ops-edit">${opFields}</div>
 
       <div class="subhead">Order &amp; ends</div>
@@ -508,6 +556,10 @@ function renderEdit(){
     <div class="fld"><label>${label} — one name per line</label>
       <textarea data-staff="${k}" rows="4">${esc(board.staff[k]||'')}</textarea></div>`).join('');
 
+  const rosterChips = roster.length
+    ? roster.map((n,i)=>`<span class="chip">${esc(n)}<button class="rmname" data-ri="${i}" title="Remove ${esc(n)}">×</button></span>`).join('')
+    : `<span class="hint">No names yet — add people below and they'll appear in every position dropdown.</span>`;
+
   document.getElementById('view').innerHTML = `
     <div class="edit-wrap">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
@@ -515,6 +567,14 @@ function renderEdit(){
         <div class="spacer" style="flex:1"></div>
         <button class="btn" id="copyPrev">Start from yesterday</button>
         <button class="btn" id="clearDay">Clear this day</button>
+      </div>
+      <div class="ecard" style="border-top-color:var(--edge)">
+        <div class="subhead">People / Roster <span class="hint">(these names fill every position dropdown — one shared list for all days)</span></div>
+        <div class="roster">${rosterChips}</div>
+        <div class="roster-add">
+          <input id="newName" placeholder="Add a person's name…">
+          <button class="btn" id="addName">Add</button>
+        </div>
       </div>
       <div class="edit-lines">${lineCards}
         <button class="addline" id="addLine">+ Add line</button>
@@ -545,9 +605,14 @@ document.getElementById('view').addEventListener('input', e=>{
   const li = t.getAttribute('data-line');
   if(li!==null){
     const idx=+li, l=board.lines[idx];
-    if(t.dataset.op!==undefined && t.dataset.i!==undefined){   // a position name
+    if(t.dataset.op!==undefined && t.dataset.i!==undefined){   // a position dropdown
       const k=t.dataset.op, i=+t.dataset.i;
       if(!Array.isArray(l.ops[k])) l.ops[k]=[];
+      if(t.value==='__add__'){                                 // "＋ Add new name…"
+        const name=(prompt('Add a new name to the roster:')||'').trim();
+        if(name){ rosterAdd(name); l.ops[k][i]=name; } else { l.ops[k][i]=l.ops[k][i]||''; }
+        scheduleSave(); render(); return;                      // refresh dropdowns + selection
+      }
       l.ops[k][i]=t.value; scheduleSave(); return;
     }
     if(t.dataset.f){
@@ -569,9 +634,17 @@ document.getElementById('view').addEventListener('input', e=>{
   }
   if(t.dataset.staff!==undefined){ board.staff[t.dataset.staff]=t.value; scheduleSave(); return; }
 });
+document.getElementById('view').addEventListener('keydown', e=>{
+  if(mode==='edit' && e.target && e.target.id==='newName' && e.key==='Enter'){
+    e.preventDefault();
+    if(rosterAdd(e.target.value)) render();
+  }
+});
 document.getElementById('view').addEventListener('click', async e=>{
   const t=e.target;
   if(t.id==='addLine'){ board.lines.push(blankLine("")); scheduleSave(); render(); }
+  else if(t.id==='addName'){ const inp=document.getElementById('newName'); if(rosterAdd(inp&&inp.value)) render(); }
+  else if(t.dataset.ri!==undefined){ rosterRemove(+t.dataset.ri); render(); }
   else if(t.dataset.addop!==undefined){                          // add a person to a position
     const idx=+t.dataset.line, k=t.dataset.addop, arr=board.lines[idx].ops[k];
     if(Array.isArray(arr) && arr.length<MAX_PER_POS){ arr.push(""); scheduleSave(); render(); }
@@ -625,7 +698,7 @@ setInterval(async()=>{
 },12000);
 
 /* ============================ Boot ============================ */
-(async function init(){ await loadBoard(curDate); render(); })();
+(async function init(){ await loadRoster(); await loadBoard(curDate); render(); })();
 </script>
 </body>
 </html>
