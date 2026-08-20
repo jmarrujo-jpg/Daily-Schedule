@@ -56,7 +56,7 @@
   @media(min-width:1500px){.layout{display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start}}
 
   .line-card{background:var(--panel);border:1px solid var(--edge);border-top:5px solid var(--edge2);
-    border-radius:9px;padding:14px 16px 12px;display:flex;flex-direction:column;gap:11px;position:relative;overflow:hidden}
+    border-radius:9px;padding:14px 16px 12px;display:flex;flex-direction:column;gap:10px;position:relative;overflow:hidden}
   .line-card.idle{opacity:.66}
 
   .lc-head{display:flex;align-items:flex-start;gap:12px}
@@ -69,33 +69,29 @@
   .status-pill.co{box-shadow:0 0 0 0 rgba(239,68,68,.6);animation:copulse 1.6s infinite}
   @keyframes copulse{0%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}70%{box-shadow:0 0 0 13px rgba(239,68,68,0)}100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}}
   .lc-size{font-family:var(--disp);font-weight:700;font-size:46px;line-height:.88;letter-spacing:.01em}
-  .lc-cust{font-family:var(--disp);font-weight:600;font-size:21px;color:var(--text);text-transform:uppercase;letter-spacing:.02em;margin-top:4px}
-  .lc-desc{font-size:13px;color:var(--muted);font-weight:600;margin-top:2px}
+  .lc-desc{font-size:13px;color:var(--muted);font-weight:600;margin-top:4px}
 
-  /* order line */
-  .order{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:30px}
-  .order .olabel{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
-  .order .oqty{font-family:var(--mono);font-weight:700;font-size:26px;line-height:1}
-  .order .obar{flex:1;min-width:110px;height:12px;background:#0c1116;border:1px solid var(--edge);border-radius:6px;overflow:hidden}
-  .order .ofill{height:100%;background:var(--green);border-radius:5px 0 0 5px;transition:width .4s}
-  .order .ometa{font-family:var(--mono);font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap}
-  .order .done{color:var(--green);font-weight:700}
-  .standing{font-family:var(--disp);font-weight:700;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--blue);
-    border:1px solid rgba(58,160,255,.4);background:rgba(58,160,255,.08);border-radius:6px;padding:5px 12px}
-  .standing small{color:var(--muted);font-weight:600;letter-spacing:.04em;margin-left:8px;text-transform:none;font-family:var(--body);font-size:12px}
+  /* jobs — one or more products running on the line (same size, different customer) */
+  .jobs{display:flex;flex-direction:column}
+  .job{padding:7px 0}
+  .job + .job{border-top:1px dashed var(--edge)}
+  .job-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .job-cust{font-family:var(--disp);font-weight:700;font-size:23px;text-transform:uppercase;letter-spacing:.02em;color:var(--text)}
+  .job-code{font-family:var(--mono);font-weight:600;font-size:13px;color:var(--amber);
+    background:rgba(255,179,0,.08);border:1px solid var(--amber-d);border-radius:5px;padding:2px 8px}
+  .job-meta{display:flex;gap:20px;flex-wrap:wrap;align-items:baseline;margin-top:3px;font-size:14px;color:var(--muted)}
+  .job-meta b{color:var(--text);font-family:var(--mono);font-weight:600;font-size:15px}
+  .job-meta .lbl{font-family:var(--disp);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .job-meta .done{color:var(--green);font-weight:700}
 
   /* crew — each position holds up to 3 people (primary + up to 2 more, e.g. a trainee) */
-  .ops{display:grid;grid-template-columns:1fr 1fr;gap:5px 20px;margin-top:1px}
+  .ops{display:grid;grid-template-columns:1fr 1fr;gap:5px 20px;margin-top:2px;padding-top:8px;border-top:1px solid var(--edge)}
   .op{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px dotted #26313d;padding:4px 0}
   .op .role{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.05em;flex:none}
   .op .who{display:flex;flex-direction:column;align-items:flex-end;gap:0;font-family:var(--disp);text-align:right}
   .op .who .n1{font-weight:600;font-size:20px;letter-spacing:.01em}
   .op .who .nx{font-weight:600;font-size:13.5px;color:var(--amber);letter-spacing:.02em}
   .op .who.empty{font-weight:500;font-size:16px;color:var(--dim)}
-
-  .lc-foot{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:auto;padding-top:8px;border-top:1px solid var(--edge)}
-  .lc-foot .ends-lbl{font-family:var(--disp);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-  .lc-foot b{color:var(--text);font-family:var(--mono);font-weight:600;font-size:15px}
 
   /* side rail */
   .rail{display:flex;flex-direction:column;gap:12px}
@@ -140,9 +136,18 @@
     border-radius:5px;padding:5px 10px;font-size:12px;font-weight:600;letter-spacing:.02em}
   .addname:hover{color:var(--amber);border-color:var(--amber-d)}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
   .ops-edit{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .subhead{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
     color:var(--muted);margin:8px 0 4px}
+  .jobedit{border:1px solid var(--edge);border-radius:6px;padding:10px;margin-bottom:8px;background:#131a22}
+  .jobedit-h{display:flex;align-items:center;justify-content:space-between;font-family:var(--disp);font-weight:700;
+    font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  .jobedit-h button{background:transparent;color:var(--dim);border:none;font-size:12px;font-weight:600;cursor:pointer}
+  .jobedit-h button:hover{color:var(--red)}
+  .addjob{width:100%;background:transparent;border:1px dashed var(--edge2);color:var(--muted);border-radius:6px;
+    padding:9px;font-family:var(--disp);font-weight:600;letter-spacing:.05em;font-size:13px;text-transform:uppercase}
+  .addjob:hover{color:var(--amber);border-color:var(--amber-d)}
   .edit-staff{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
   .rm{background:transparent;color:var(--dim);border:1px solid var(--edge2);border-radius:4px;padding:5px 9px;font-size:12px}
   .rm:hover{color:var(--red);border-color:var(--red)}
@@ -206,7 +211,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v6';
+var APP_VERSION = 'v7';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -239,6 +244,7 @@ const OP_ROLES = [
   ["palletizer","Palletizer"], ["frameStraps","Frame & Straps"], ["forklift","Forklift"]
 ];
 const MAX_PER_POS = 3;
+const MAX_JOBS = 4;     // a line can run several products/customers at the same size
 
 /* Line status — what the line is doing today. Each has its own color on the board.
    key ""  = idle. `pill` is the short board label; `label` is the dropdown text. */
@@ -254,11 +260,9 @@ const STATUS_ORDER = ["", "run1", "run2", "backup", "rwr", "co"];
 function statusOf(l){ return STATUS[l.status] ? l.status : ""; }
 
 const DEFAULT_LINE_ORDER = ["6","5","4","2"];
-/* Rail sections. `accent` picks the heading color so Absent / Vacation stand out. */
-const STAFF_SECTIONS = [
-  ["absent","Absent","pab"], ["vacation","Vacation","pvac"],
-  ["changeover","Change-Over Crew",""], ["presses","Presses & Litho",""], ["custodian","Custodian",""]
-];
+/* Rail: absent/vacation are people lists (roster dropdowns); presses/custodian are free text. */
+const STAFF_PEOPLE = [["absent","Absent","pab"], ["vacation","Vacation","pvac"]];
+const STAFF_TEXT   = [["presses","Presses & Litho"], ["custodian","Custodian"]];
 
 /* ============================ Storage layer ============================
    When API_URL is set, reads/writes go to the Cloudflare Worker (KV-backed) so
@@ -291,7 +295,7 @@ const Store = {
 let mode = "board";
 let curDate = todayStr();
 let board = null;
-let roster = [];   // list of people's names — fills the position dropdowns
+let roster = [];   // list of people's names — fills the position / absent / vacation dropdowns
 let saveTimer = null, saving = false, saveError = null, loadError = null;
 
 function todayStr(d=new Date()){ return d.toLocaleDateString('en-CA'); } // YYYY-MM-DD local
@@ -303,19 +307,19 @@ function fmtDateLong(date){
 function num(v){ const n=parseFloat(String(v).replace(/,/g,'')); return isFinite(n)?n:0; }
 function commas(n){ return n==null||n===''?'':Number(n).toLocaleString('en-US'); }
 
-/* A line is one production line's plan for the day.
-   status:  "" idle / run1 / run2 / backup / rwr / co  (drives the colored pill + border).
-   ops[k]:  ARRAY of up to 3 names for that position (extras = trainees / 2nd person).
-   order:   how many were ordered. BLANK = standing/ongoing order (we always run it).
-   made:    optional — how many already made, for a smaller order that spans days. */
+/* A line runs one can SIZE, but can carry several JOBS (products) at that size —
+   same size, different customer — each with its own code, ends and order qty.
+   status: "" idle / run1 / run2 / backup / rwr / co  (colored pill + border).
+   ops[k]: ARRAY of up to 3 names per position (extras = trainees / 2nd person). */
+function blankJob(){ return { code:"", cust:"", ends:"", order:"", made:"" }; }
 function blankLine(lineNo){
-  return { lineNo:String(lineNo), status:"", size:"", cust:"", desc:"",
+  return { lineNo:String(lineNo), status:"", size:"", desc:"",
     ops:{bodymaker:[""],doubleSeamer:[""],palletizer:[""],frameStraps:[""],forklift:[""]},
-    order:"", made:"", ends1:"", ends2:"" };
+    jobs:[ blankJob() ] };
 }
 function blankBoard(date){
   return { date, lines: DEFAULT_LINE_ORDER.map(blankLine),
-    staff:{absent:"",vacation:"",changeover:"",presses:"",custodian:""} };
+    staff:{absent:[],vacation:[],presses:"",custodian:""} };
 }
 /* Names for a position, always as an array of strings (max MAX_PER_POS). */
 function opArr(l,k){
@@ -323,13 +327,27 @@ function opArr(l,k){
   if(!Array.isArray(v)) v = (v==null || v==='') ? [] : [v];
   return v.map(s=>String(s==null?'':s)).slice(0,MAX_PER_POS);
 }
+function toNameArr(v){
+  if(Array.isArray(v)) return v.map(x=>String(x==null?'':x));
+  if(typeof v==='string' && v.trim()) return v.split('\n').map(s=>s.trim()).filter(Boolean);
+  return [];
+}
 /* Older saved boards may miss newer fields — fill them in so render is safe. */
 function normalizeLine(l){
   const b=blankLine(l.lineNo||"");
   l.ops = l.ops || {};
   OP_ROLES.forEach(([k])=>{ const a=opArr(l,k); l.ops[k]=a.length?a:[""]; });
-  for(const k in b) if(k!=='ops' && l[k]===undefined) l[k]=b[k];
-  if(!l.cust && l.of) l.cust=l.of;                 // migrate legacy customer field
+  // jobs: use the array if present, else build one from legacy flat fields
+  if(Array.isArray(l.jobs) && l.jobs.length){
+    l.jobs = l.jobs.map(j=>({ code:String(j.code||''), cust:String(j.cust||''),
+      ends:String(j.ends||''), order:String(j.order==null?'':j.order), made:String(j.made==null?'':j.made) })).slice(0,MAX_JOBS);
+  }else{
+    const j1={ code:String(l.code||''), cust:String(l.cust||l.of||''), ends:String(l.ends1||''),
+      order:String(l.order==null?'':l.order), made:String(l.made==null?'':l.made) };
+    l.jobs=[j1];
+    if(l.ends2) l.jobs.push({ code:'', cust:'', ends:String(l.ends2), order:'', made:'' });
+  }
+  for(const k in b) if(k!=='ops' && k!=='jobs' && l[k]===undefined) l[k]=b[k];
   if(l.status===undefined || l.status===null){     // migrate legacy changeover flag
     l.status = l.changeover ? 'co' : (l.size ? 'run1' : '');
   }
@@ -338,7 +356,13 @@ function normalizeLine(l){
 function normalizeBoard(bd){
   if(!bd.lines) bd.lines=[];
   bd.lines.forEach(normalizeLine);
-  bd.staff = Object.assign({absent:"",vacation:"",changeover:"",presses:"",custodian:""}, bd.staff||{});
+  const s = bd.staff||{};
+  bd.staff = {
+    absent: toNameArr(s.absent),
+    vacation: toNameArr(s.vacation),
+    presses: typeof s.presses==='string' ? s.presses : toNameArr(s.presses).join('\n'),
+    custodian: typeof s.custodian==='string' ? s.custodian : toNameArr(s.custodian).join('\n')
+  };
   return bd;
 }
 
@@ -411,32 +435,36 @@ function render(){
   }else{
     fn.style.color='';
     fn.textContent=(mode==="edit"
-      ? "Changes save automatically to this day. Leave Order blank for a standing (ongoing) run."
+      ? "Changes save automatically to this day. Same size for two customers? Add another product."
       : "Board view · updates live · press ⛶ TV for fullscreen on a display") + "   ·   " + APP_VERSION;
   }
   if(mode==="board") renderBoard(); else renderEdit();
 }
 
 /* ============================ Render: BOARD (TV) ============================ */
-function orderHTML(l){
-  const o=num(l.order);
-  if(!l.order){ // no quantity = standing order
-    return `<span class="standing">Standing Order<small>ongoing — always running</small></span>`;
-  }
-  const m=num(l.made);
-  if(!l.made){ // ordered qty, nothing entered as made yet
-    return `<span class="olabel">Order</span><span class="oqty">${commas(o)}</span><span class="ometa">cans</span>`;
-  }
-  const pct=o>0?Math.min(m/o*100,100):0;
-  const left=Math.max(o-m,0);
-  const done=m>=o && o>0;
-  return `<span class="olabel">Order</span><span class="oqty">${commas(o)}</span>
-    <div class="obar"><div class="ofill" style="width:${pct}%;background:${done?'var(--green)':'var(--blue)'}"></div></div>
-    <span class="ometa">${done?`<span class="done">✓ complete</span>`:`${commas(m)} made · ${commas(left)} left`}</span>`;
+function orderInline(j){
+  const o=num(j.order);
+  if(!o) return '';                       // no order qty → show nothing (no "standing order")
+  const m=num(j.made);
+  if(!m) return `<span><span class="lbl">Order</span> <b>${commas(o)}</b></span>`;
+  const left=Math.max(o-m,0), done=m>=o;
+  return `<span><span class="lbl">Order</span> <b>${commas(o)}</b> · ${done?'<span class="done">✓ complete</span>':(commas(m)+' made · '+commas(left)+' left')}</span>`;
 }
 function renderBoard(){
   const cards = board.lines.map(l=>{
     const st=statusOf(l), sd=STATUS[st];
+    const jobs = (l.jobs||[]).filter(j=>j.cust||j.code||j.ends||j.order);
+    const jobsHTML = jobs.map(j=>`
+      <div class="job">
+        <div class="job-head">
+          ${j.cust?`<span class="job-cust">${esc(j.cust)}</span>`:''}
+          ${j.code?`<span class="job-code">${esc(j.code)}</span>`:''}
+        </div>
+        <div class="job-meta">
+          ${j.ends?`<span><span class="lbl">Ends</span> <b>${esc(j.ends)}</b></span>`:''}
+          ${orderInline(j)}
+        </div>
+      </div>`).join('');
     const ops = OP_ROLES.map(([k,label])=>{
       const names = opArr(l,k).map(s=>s.trim()).filter(Boolean);
       const who = names.length
@@ -444,7 +472,6 @@ function renderBoard(){
         : `<span class="who empty">—</span>`;
       return `<div class="op"><span class="role">${label}</span>${who}</div>`;
     }).join('');
-    const ends=[l.ends1,l.ends2].filter(Boolean).map(esc).join(' · ');
     return `<div class="line-card${st===''?' idle':''}" style="border-top-color:${sd.color}">
       <div class="lc-head">
         <span class="lc-no">Line ${esc(l.lineNo)}</span>
@@ -453,22 +480,23 @@ function renderBoard(){
             <span class="status-pill${st==='co'?' co':''}" style="background:${sd.color};color:${sd.fg}">${sd.pill}</span>
             <span class="lc-size">${esc(l.size)||'<span style="color:var(--dim)">—</span>'}</span>
           </div>
-          ${l.cust?`<div class="lc-cust">${esc(l.cust)}</div>`:''}
           ${l.desc?`<div class="lc-desc">${esc(l.desc)}</div>`:''}
         </div>
       </div>
-      ${l.size?`<div class="order">${orderHTML(l)}</div>`:''}
+      ${jobsHTML?`<div class="jobs">${jobsHTML}</div>`:''}
       <div class="ops">${ops}</div>
-      <div class="lc-foot">
-        ${ends?`<span><span class="ends-lbl">Ends</span> <b>${ends}</b></span>`
-              :`<span><span class="ends-lbl">Ends</span> <b style="color:var(--dim)">—</b></span>`}
-      </div>
     </div>`;
   }).join('');
 
-  const rail = STAFF_SECTIONS.map(([k,label,accent])=>{
-    const items=(board.staff[k]||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  const railPeople = STAFF_PEOPLE.map(([k,label,accent])=>{
+    const items=(board.staff[k]||[]).map(s=>String(s||'').trim()).filter(Boolean);
     return `<div class="panel ${accent}"><h3>${label}</h3>
+      ${items.length?`<ul>${items.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:`<div class="none">— none —</div>`}
+    </div>`;
+  }).join('');
+  const railText = STAFF_TEXT.map(([k,label])=>{
+    const items=(board.staff[k]||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    return `<div class="panel"><h3>${label}</h3>
       ${items.length?`<ul>${items.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:`<div class="none">— none —</div>`}
     </div>`;
   }).join('');
@@ -479,7 +507,7 @@ function renderBoard(){
   document.getElementById('view').innerHTML = `
     <div class="layout">
       <div class="board-grid">${cards}</div>
-      <div class="rail">${rail}</div>
+      <div class="rail">${railPeople}${railText}</div>
     </div>
     <div class="legend">${legend}</div>
     <div class="safety">Have a Safe &amp; Productive Day!</div>`;
@@ -490,7 +518,7 @@ function statusOptions(cur){
   const c = STATUS[cur] ? cur : "";
   return STATUS_ORDER.map(k=>`<option value="${k}" ${k===c?'selected':''}>${STATUS[k].label}</option>`).join('');
 }
-/* One position dropdown: — none —, every roster name, then "＋ Add new name…".
+/* One person dropdown: — none —, every roster name, then "＋ Add new name…".
    If the stored value isn't in the roster it's kept so nothing is lost. */
 function nameOptions(cur){
   const names = roster.slice().sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
@@ -509,12 +537,37 @@ function posInputs(l, idx, k){
   const add = shown.length<MAX_PER_POS ? `<button class="addname" data-line="${idx}" data-addop="${k}">＋ add person</button>` : '';
   return `<div class="names">${selects}${add}</div>`;
 }
+function staffPeopleInputs(key){
+  const arr=(Array.isArray(board.staff[key])?board.staff[key]:[]).map(s=>String(s||''));
+  const shown = arr.length?arr:[""];
+  const sels = shown.map((n,i)=>`<select data-staffp="${key}" data-i="${i}">${nameOptions(n)}</select>`).join('');
+  const add = `<button class="addname" data-addstaff="${key}">＋ add person</button>`;
+  return `<div class="names">${sels}${add}</div>`;
+}
 function renderEdit(){
   const lineCards = board.lines.map((l,idx)=>{
     const sizeOpts = sizeOptionsFor(l.lineNo, l.size);
     const sd = STATUS[statusOf(l)];
     const opFields = OP_ROLES.map(([k,label])=>`
       <div class="fld"><label>${label}</label>${posInputs(l,idx,k)}</div>`).join('');
+    const jobFields = (l.jobs||[]).map((j,ji)=>`
+      <div class="jobedit">
+        <div class="jobedit-h"><span>Product ${ji+1}</span>${l.jobs.length>1?`<button data-rmjob="${idx}" data-ji="${ji}">remove</button>`:''}</div>
+        <div class="row2">
+          <div class="fld"><label>Product code</label>
+            <input value="${esc(j.code)}" data-line="${idx}" data-job="${ji}" data-jf="code" placeholder="e.g. 10432"></div>
+          <div class="fld"><label>Customer</label>
+            <input value="${esc(j.cust)}" data-line="${idx}" data-job="${ji}" data-jf="cust" placeholder="e.g. Juanitas"></div>
+        </div>
+        <div class="row3">
+          <div class="fld"><label>Ends</label>
+            <input value="${esc(j.ends)}" data-line="${idx}" data-job="${ji}" data-jf="ends"></div>
+          <div class="fld"><label>Order qty <span class="hint">(blank = none)</span></label>
+            <input class="mono" inputmode="numeric" value="${esc(j.order)}" data-line="${idx}" data-job="${ji}" data-jf="order"></div>
+          <div class="fld"><label>Made <span class="hint">(optional)</span></label>
+            <input class="mono" inputmode="numeric" value="${esc(j.made)}" data-line="${idx}" data-job="${ji}" data-jf="made"></div>
+        </div>
+      </div>`).join('');
     return `<div class="ecard" style="border-top-color:${sd.color}">
       <div class="eh">
         <span class="lc-no">Line</span>
@@ -528,37 +581,27 @@ function renderEdit(){
         <div class="fld"><label>Can size</label>
           <select data-line="${idx}" data-f="size">${sizeOpts}</select></div>
       </div>
-      <div class="fld"><label>Customer</label>
-        <input value="${esc(l.cust)}" data-line="${idx}" data-f="cust" placeholder="e.g. Juanitas"></div>
       <div class="fld"><label>Note <span class="hint">(optional)</span></label>
         <input value="${esc(l.desc)}" data-line="${idx}" data-f="desc" placeholder="anything the crew should know"></div>
 
       <div class="subhead">Positions <span class="hint">(pick from the roster — add a 2nd for a trainee)</span></div>
       <div class="ops-edit">${opFields}</div>
 
-      <div class="subhead">Order &amp; ends</div>
-      <div class="row2">
-        <div class="fld"><label>Order qty <span class="hint">(blank = standing/ongoing)</span></label>
-          <input class="mono" inputmode="numeric" value="${esc(l.order)}" data-line="${idx}" data-f="order" placeholder="e.g. 40000"></div>
-        <div class="fld"><label>Made so far <span class="hint">(optional, multi-day)</span></label>
-          <input class="mono" inputmode="numeric" value="${esc(l.made)}" data-line="${idx}" data-f="made"></div>
-      </div>
-      <div class="row2">
-        <div class="fld"><label>Ends 1</label>
-          <input value="${esc(l.ends1)}" data-line="${idx}" data-f="ends1"></div>
-        <div class="fld"><label>Ends 2</label>
-          <input value="${esc(l.ends2)}" data-line="${idx}" data-f="ends2"></div>
-      </div>
+      <div class="subhead">Products <span class="hint">(same size, different customer = add another)</span></div>
+      ${jobFields}
+      ${l.jobs.length<MAX_JOBS?`<button class="addjob" data-addjob="${idx}">＋ add another product / customer</button>`:''}
     </div>`;
   }).join('');
 
-  const staffFields = STAFF_SECTIONS.map(([k,label])=>`
-    <div class="fld"><label>${label} — one name per line</label>
-      <textarea data-staff="${k}" rows="4">${esc(board.staff[k]||'')}</textarea></div>`).join('');
-
   const rosterChips = roster.length
     ? roster.map((n,i)=>`<span class="chip">${esc(n)}<button class="rmname" data-ri="${i}" title="Remove ${esc(n)}">×</button></span>`).join('')
-    : `<span class="hint">No names yet — add people below and they'll appear in every position dropdown.</span>`;
+    : `<span class="hint">No names yet — add people below and they'll appear in every dropdown.</span>`;
+
+  const staffPeople = STAFF_PEOPLE.map(([k,label])=>`
+    <div class="fld"><label>${label} — pick people</label>${staffPeopleInputs(k)}</div>`).join('');
+  const staffText = STAFF_TEXT.map(([k,label])=>`
+    <div class="fld"><label>${label} — one name per line</label>
+      <textarea data-staff="${k}" rows="4">${esc(board.staff[k]||'')}</textarea></div>`).join('');
 
   document.getElementById('view').innerHTML = `
     <div class="edit-wrap">
@@ -569,7 +612,7 @@ function renderEdit(){
         <button class="btn" id="clearDay">Clear this day</button>
       </div>
       <div class="ecard" style="border-top-color:var(--edge)">
-        <div class="subhead">People / Roster <span class="hint">(these names fill every position dropdown — one shared list for all days)</span></div>
+        <div class="subhead">People / Roster <span class="hint">(these names fill every dropdown — one shared list for all days)</span></div>
         <div class="roster">${rosterChips}</div>
         <div class="roster-add">
           <input id="newName" placeholder="Add a person's name…">
@@ -581,7 +624,7 @@ function renderEdit(){
       </div>
       <div class="ecard" style="border-top-color:var(--edge)">
         <div class="subhead">Absent, vacation &amp; support crew</div>
-        <div class="edit-staff">${staffFields}</div>
+        <div class="edit-staff">${staffPeople}${staffText}</div>
       </div>
     </div>`;
   updateSaveChip();
@@ -611,9 +654,14 @@ document.getElementById('view').addEventListener('input', e=>{
       if(t.value==='__add__'){                                 // "＋ Add new name…"
         const name=(prompt('Add a new name to the roster:')||'').trim();
         if(name){ rosterAdd(name); l.ops[k][i]=name; } else { l.ops[k][i]=l.ops[k][i]||''; }
-        scheduleSave(); render(); return;                      // refresh dropdowns + selection
+        scheduleSave(); render(); return;
       }
       l.ops[k][i]=t.value; scheduleSave(); return;
+    }
+    if(t.dataset.job!==undefined && t.dataset.jf){             // a product/job field
+      const ji=+t.dataset.job;
+      if(!l.jobs[ji]) l.jobs[ji]=blankJob();
+      l.jobs[ji][t.dataset.jf]=t.value; scheduleSave(); return;
     }
     if(t.dataset.f){
       const f=t.dataset.f; l[f]=t.value;
@@ -624,13 +672,22 @@ document.getElementById('view').addEventListener('input', e=>{
         scheduleSave(); render(); return;
       }
       if(f==='lineNo'){
-        // refresh just this line's size options in place (keeps cursor in the field)
         const sel=document.querySelector(`.edit-lines select[data-line="${idx}"][data-f="size"]`);
         if(sel) sel.innerHTML=sizeOptionsFor(l.lineNo,l.size);
       }
       scheduleSave();
       return;
     }
+  }
+  if(t.dataset.staffp!==undefined && t.dataset.i!==undefined){   // absent / vacation person
+    const key=t.dataset.staffp, i=+t.dataset.i;
+    if(!Array.isArray(board.staff[key])) board.staff[key]=[];
+    if(t.value==='__add__'){
+      const name=(prompt('Add a new name to the roster:')||'').trim();
+      if(name){ rosterAdd(name); board.staff[key][i]=name; }
+      scheduleSave(); render(); return;
+    }
+    board.staff[key][i]=t.value; scheduleSave(); return;
   }
   if(t.dataset.staff!==undefined){ board.staff[t.dataset.staff]=t.value; scheduleSave(); return; }
 });
@@ -649,6 +706,21 @@ document.getElementById('view').addEventListener('click', async e=>{
     const idx=+t.dataset.line, k=t.dataset.addop, arr=board.lines[idx].ops[k];
     if(Array.isArray(arr) && arr.length<MAX_PER_POS){ arr.push(""); scheduleSave(); render(); }
   }
+  else if(t.dataset.addstaff!==undefined){                       // add a person to absent/vacation
+    const key=t.dataset.addstaff;
+    if(!Array.isArray(board.staff[key])) board.staff[key]=[];
+    board.staff[key].push(""); scheduleSave(); render();
+  }
+  else if(t.dataset.addjob!==undefined){                         // add a product/job to a line
+    const i=+t.dataset.addjob, L=board.lines[i];
+    if(L.jobs.length<MAX_JOBS){ L.jobs.push(blankJob()); scheduleSave(); render(); }
+  }
+  else if(t.dataset.rmjob!==undefined){                          // remove a product/job
+    const i=+t.dataset.rmjob, ji=+t.dataset.ji;
+    board.lines[i].jobs.splice(ji,1);
+    if(!board.lines[i].jobs.length) board.lines[i].jobs=[blankJob()];
+    scheduleSave(); render();
+  }
   else if(t.dataset.rmline!==undefined){ board.lines.splice(+t.dataset.rmline,1); scheduleSave(); render(); }
   else if(t.id==='clearDay'){ if(confirm('Clear all entries for this day?')){ board=blankBoard(curDate); scheduleSave(); render(); } }
   else if(t.id==='copyPrev'){ await copyFromYesterday(); }
@@ -660,9 +732,8 @@ async function copyFromYesterday(){
   try{ src=await Store.get(keyFor(prev)); }
   catch(err){ alert('Could not reach the board server to load '+fmtDateLong(prev)); return; }
   if(!src){ alert('No board found for '+fmtDateLong(prev)); return; }
-  // Copy the setup (lines, positions, staffing, standing orders) as a starting
-  // point. A change-over is a one-day event — once it's done the line is running
-  // that size, so roll CO forward to Run 1st for the new day.
+  // Copy the setup as a starting point. A change-over is a one-day event — once
+  // it's done the line is running that size, so roll CO forward to Run 1st.
   board = normalizeBoard(JSON.parse(JSON.stringify(src)));
   board.date=curDate;
   board.lines.forEach(l=>{ if(l.status==='co') l.status='run1'; });
