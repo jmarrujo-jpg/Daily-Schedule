@@ -1,0 +1,16 @@
+# Only needed if you deploy the Worker by connecting it to GitHub (Workers Builds) or wrangler.
+# If you create the Worker the easy way — "Create Worker" -> Edit code -> paste worker.js -> Deploy,
+# then bind the KV namespace in the dashboard — you don't need this file at all.
+#
+# The Worker's name in the Cloudflare dashboard must match "name" below, or wrangler will deploy
+# to a Worker with this name instead. Change it to match your Worker if you named it differently.
+name = "daily-schedule-api"
+main = "worker.js"
+compatibility_date = "2024-11-06"
+
+# The board store. Create a KV namespace (Storage & Databases > KV > Create) and paste its id
+# here, or bind it in the dashboard (Worker > Settings > Bindings > Add > KV namespace) with the
+# variable name BOARDS. The binding name MUST be BOARDS — the Worker reads env.BOARDS.
+[[kv_namespaces]]
+binding = "BOARDS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
