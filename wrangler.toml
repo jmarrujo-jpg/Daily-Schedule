@@ -13,4 +13,4 @@ compatibility_date = "2024-11-06"
 # variable name BOARDS. The binding name MUST be BOARDS — the Worker reads env.BOARDS.
 [[kv_namespaces]]
 binding = "BOARDS"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "828715952ac74b47803beee4ffbdc913"
