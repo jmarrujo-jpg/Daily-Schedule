@@ -206,7 +206,7 @@
    (see HOSTING.md) and every screen — the shop-floor TV and the office editor —
    shares one live board. Leave API_URL blank and the board still works, saved
    in this browser's localStorage (single device, no cross-screen sync). */
-var API_URL = '';       // e.g. 'https://daily-schedule.<subdomain>.workers.dev'
+var API_URL = 'https://daily-schedule.jmarrujo.workers.dev';   // Cloudflare Worker (Google Sheet store)
 var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
