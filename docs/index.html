@@ -32,7 +32,7 @@
   .brand h1{font-family:var(--disp);font-weight:700;font-size:26px;letter-spacing:.06em;text-transform:uppercase}
   .cochip{font-family:var(--disp);font-weight:700;font-size:15px;letter-spacing:.1em;text-transform:uppercase;
     padding:4px 11px;border-radius:5px;white-space:nowrap}
-  .cochip.has{color:#161009;background:var(--amber)}
+  .cochip.has{color:#fff;background:var(--red)}
   .cochip.none{color:var(--muted);border:1px solid var(--edge2)}
   .spacer{flex:1}
   .datenav{display:flex;align-items:center;gap:6px}
@@ -57,21 +57,20 @@
 
   .line-card{background:var(--panel);border:1px solid var(--edge);border-top:5px solid var(--edge2);
     border-radius:9px;padding:14px 16px 12px;display:flex;flex-direction:column;gap:11px;position:relative;overflow:hidden}
-  .st-run{border-top-color:var(--green)}
-  .st-co{border-top-color:var(--amber);background:linear-gradient(180deg,rgba(255,179,0,.06),transparent 120px)}
-  .st-idle{border-top-color:var(--edge2);opacity:.72}
+  .line-card.idle{opacity:.66}
 
   .lc-head{display:flex;align-items:flex-start;gap:12px}
   .lc-no{font-family:var(--disp);font-weight:700;font-size:16px;letter-spacing:.08em;color:#0d1117;
-    background:var(--text);border-radius:5px;padding:3px 11px;text-transform:uppercase;flex:none}
+    background:var(--text);border-radius:5px;padding:3px 11px;text-transform:uppercase;flex:none;margin-top:4px}
   .lc-headtxt{flex:1;min-width:0}
-  .lc-size{font-family:var(--disp);font-weight:700;font-size:48px;line-height:.88;letter-spacing:.01em}
-  .lc-cust{font-family:var(--disp);font-weight:600;font-size:21px;color:var(--text);text-transform:uppercase;letter-spacing:.02em;margin-top:2px}
+  .lc-row1{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .status-pill{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:.06em;text-transform:uppercase;
+    border-radius:7px;padding:6px 15px;line-height:1;white-space:nowrap;flex:none}
+  .status-pill.co{box-shadow:0 0 0 0 rgba(239,68,68,.6);animation:copulse 1.6s infinite}
+  @keyframes copulse{0%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}70%{box-shadow:0 0 0 13px rgba(239,68,68,0)}100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}}
+  .lc-size{font-family:var(--disp);font-weight:700;font-size:46px;line-height:.88;letter-spacing:.01em}
+  .lc-cust{font-family:var(--disp);font-weight:600;font-size:21px;color:var(--text);text-transform:uppercase;letter-spacing:.02em;margin-top:4px}
   .lc-desc{font-size:13px;color:var(--muted);font-weight:600;margin-top:2px}
-  .co-badge{font-family:var(--disp);font-weight:700;font-size:16px;letter-spacing:.11em;text-transform:uppercase;
-    color:#161009;background:var(--amber);border-radius:6px;padding:6px 13px;display:inline-flex;align-items:center;gap:7px;
-    flex:none;box-shadow:0 0 0 0 rgba(255,179,0,.6);animation:copulse 1.7s infinite}
-  @keyframes copulse{0%{box-shadow:0 0 0 0 rgba(255,179,0,.5)}70%{box-shadow:0 0 0 13px rgba(255,179,0,0)}100%{box-shadow:0 0 0 0 rgba(255,179,0,0)}}
 
   /* order line */
   .order{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:30px}
@@ -107,15 +106,20 @@
   .rail li{font-size:17px;font-weight:600;font-family:var(--disp);letter-spacing:.01em}
   .rail .none{color:var(--dim);font-size:14px;font-weight:500}
 
-  .safety{margin:14px 0 4px;text-align:center;font-family:var(--disp);font-weight:700;font-size:22px;
+  /* status legend */
+  .legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:10px 2px 2px}
+  .legend .li{display:flex;align-items:center;gap:7px;font-family:var(--disp);font-weight:600;font-size:13px;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  .legend .sw{width:14px;height:14px;border-radius:4px;flex:none}
+
+  .safety{margin:8px 0 4px;text-align:center;font-family:var(--disp);font-weight:700;font-size:22px;
     letter-spacing:.16em;color:#161009;background:repeating-linear-gradient(45deg,var(--amber),var(--amber) 22px,#e2a000 22px,#e2a000 44px);
     padding:8px;border-radius:5px;text-transform:uppercase}
 
   /* ---------- Edit view ---------- */
   .edit-wrap{display:flex;flex-direction:column;gap:16px}
   .edit-lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
-  .ecard{background:var(--panel);border:1px solid var(--edge);border-radius:8px;padding:14px}
-  .ecard.co{border-color:var(--amber-d);box-shadow:inset 0 3px 0 var(--amber)}
+  .ecard{background:var(--panel);border:1px solid var(--edge);border-top-width:4px;border-radius:8px;padding:14px}
   .ecard .eh{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--edge)}
   .ecard .eh .lc-no{font-size:14px}
   .ecard .eh input.lineno{width:52px}
@@ -124,15 +128,13 @@
   .fld .hint{font-size:11px;color:var(--dim);font-weight:500;text-transform:none;letter-spacing:0}
   .fld input,.fld select,.fld textarea{background:var(--panel2);color:var(--text);border:1px solid var(--edge2);
     border-radius:5px;padding:8px 9px;font-size:15px;width:100%}
+  .fld select.status-sel{font-family:var(--disp);font-weight:700;letter-spacing:.04em}
   .fld input.mono,.fld input[inputmode]{font-family:var(--mono)}
   .fld textarea{resize:vertical;min-height:52px;line-height:1.35}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .ops-edit{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .subhead{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
     color:var(--muted);margin:8px 0 4px}
-  .cotoggle{background:var(--panel2);border:1px solid var(--edge2);color:var(--muted);border-radius:6px;
-    padding:7px 12px;font-family:var(--disp);font-weight:700;font-size:14px;letter-spacing:.06em;text-transform:uppercase;transition:.12s}
-  .cotoggle.on{background:var(--amber);border-color:var(--amber);color:#161009}
   .edit-staff{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
   .rm{background:transparent;color:var(--dim);border:1px solid var(--edge2);border-radius:4px;padding:5px 9px;font-size:12px}
   .rm:hover{color:var(--red);border-color:var(--red)}
@@ -187,7 +189,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v3';
+var APP_VERSION = 'v4';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -211,11 +213,26 @@ const LINE_SIZES = {
   "6": ["603x600","603x606","603x700","603x408","603x410","603x812","603x409"]
 };
 const ALL_SIZES = [...new Set(Object.values(LINE_SIZES).flat())];
+
+/* Crew positions shown on each line (Run 1st is now a line STATUS, not a position). */
 const OP_ROLES = [
-  ["run1st","Run 1st"], ["backup","Back Up"], ["bodymaker","Bodymaker"],
+  ["backup","Back Up"], ["bodymaker","Bodymaker"],
   ["doubleSeamer","Double Seamer"], ["palletizer","Palletizer"],
   ["frameStraps","Frame & Straps"], ["forklift","Forklift"]
 ];
+
+/* Line status — what the line is doing today. Each has its own color on the board.
+   key ""  = idle. `pill` is the short board label; `label` is the dropdown text. */
+const STATUS = {
+  ""    : { pill:"Idle",    label:"— Idle —",              color:"var(--edge2)", fg:"var(--muted)" },
+  run1  : { pill:"Run 1st", label:"Run 1st",               color:"var(--green)", fg:"#0d1117" },
+  run2  : { pill:"Run 2nd", label:"Run 2nd",               color:"var(--blue)",  fg:"#0d1117" },
+  rwr   : { pill:"RWR",     label:"RWR (Run When Ready)",   color:"var(--amber)", fg:"#161009" },
+  co    : { pill:"CO",      label:"CO (Change Over)",       color:"var(--red)",   fg:"#ffffff" }
+};
+const STATUS_ORDER = ["", "run1", "run2", "rwr", "co"];
+function statusOf(l){ return STATUS[l.status] ? l.status : ""; }
+
 const DEFAULT_LINE_ORDER = ["6","5","4","2"];
 /* Rail sections. `accent` picks the heading color so Absent / Vacation stand out. */
 const STAFF_SECTIONS = [
@@ -256,12 +273,12 @@ function num(v){ const n=parseFloat(String(v).replace(/,/g,'')); return isFinite
 function commas(n){ return n==null||n===''?'':Number(n).toLocaleString('en-US'); }
 
 /* A line is one production line's plan for the day.
-   changeover: true when the can size is switching (drives the big badge).
-   order:      how many were ordered. BLANK = standing/ongoing order (we always run it).
-   made:       optional — how many already made, for a smaller order that spans days. */
+   status:  "" idle / run1 / run2 / rwr / co  (drives the colored pill + border).
+   order:   how many were ordered. BLANK = standing/ongoing order (we always run it).
+   made:    optional — how many already made, for a smaller order that spans days. */
 function blankLine(lineNo){
-  return { lineNo:String(lineNo), size:"", cust:"", desc:"", changeover:false,
-    ops:{run1st:"",backup:"",bodymaker:"",doubleSeamer:"",palletizer:"",frameStraps:"",forklift:""},
+  return { lineNo:String(lineNo), status:"", size:"", cust:"", desc:"",
+    ops:{backup:"",bodymaker:"",doubleSeamer:"",palletizer:"",frameStraps:"",forklift:""},
     order:"", made:"", ends1:"", ends2:"" };
 }
 function blankBoard(date){
@@ -273,8 +290,10 @@ function normalizeLine(l){
   const b=blankLine(l.lineNo||"");
   l.ops = Object.assign({}, b.ops, l.ops||{});
   for(const k in b) if(l[k]===undefined) l[k]=b[k];
-  // migrate legacy "of" (customer/order-form) field into cust
-  if(!l.cust && l.of) l.cust=l.of;
+  if(!l.cust && l.of) l.cust=l.of;                 // migrate legacy customer field
+  if(l.status===undefined || l.status===null){     // migrate legacy changeover flag
+    l.status = l.changeover ? 'co' : (l.size ? 'run1' : '');
+  }
   return l;
 }
 function normalizeBoard(bd){
@@ -316,9 +335,7 @@ function updateSaveChip(){
 }
 
 /* ============================ Helpers ============================ */
-function lineStatus(l){ if(!l.size) return "idle"; return l.changeover ? "co" : "run"; }
-function changeoverCount(){ return board.lines.filter(l=>l.size && l.changeover).length; }
-
+function changeoverCount(){ return board.lines.filter(l=>l.status==='co').length; }
 function updateCoChip(){
   const n = changeoverCount(), el=document.getElementById('coChip');
   if(n>0){ el.className='cochip has'; el.textContent='⟳ '+n+' CHANGE-OVER'+(n>1?'S':'')+' TODAY'; }
@@ -364,21 +381,23 @@ function orderHTML(l){
 }
 function renderBoard(){
   const cards = board.lines.map(l=>{
-    const st=lineStatus(l);
+    const st=statusOf(l), sd=STATUS[st];
     const ops = OP_ROLES.map(([k,label])=>{
       const who=(l.ops&&l.ops[k])?l.ops[k]:'';
       return `<div class="op"><span class="role">${label}</span><span class="who ${who?'':'empty'}">${esc(who)||'—'}</span></div>`;
     }).join('');
     const ends=[l.ends1,l.ends2].filter(Boolean).map(esc).join(' · ');
-    return `<div class="line-card st-${st}">
+    return `<div class="line-card${st===''?' idle':''}" style="border-top-color:${sd.color}">
       <div class="lc-head">
         <span class="lc-no">Line ${esc(l.lineNo)}</span>
         <div class="lc-headtxt">
-          <div class="lc-size">${esc(l.size)||'<span style="color:var(--dim)">— idle —</span>'}</div>
+          <div class="lc-row1">
+            <span class="status-pill${st==='co'?' co':''}" style="background:${sd.color};color:${sd.fg}">${sd.pill}</span>
+            <span class="lc-size">${esc(l.size)||'<span style="color:var(--dim)">—</span>'}</span>
+          </div>
           ${l.cust?`<div class="lc-cust">${esc(l.cust)}</div>`:''}
           ${l.desc?`<div class="lc-desc">${esc(l.desc)}</div>`:''}
         </div>
-        ${st==='co'?`<span class="co-badge">⟳ Change-Over</span>`:''}
       </div>
       ${l.size?`<div class="order">${orderHTML(l)}</div>`:''}
       <div class="ops">${ops}</div>
@@ -396,35 +415,45 @@ function renderBoard(){
     </div>`;
   }).join('');
 
+  const legend = STATUS_ORDER.filter(k=>k).map(k=>
+    `<span class="li"><span class="sw" style="background:${STATUS[k].color}"></span>${STATUS[k].pill}</span>`).join('');
+
   document.getElementById('view').innerHTML = `
     <div class="layout">
       <div class="board-grid">${cards}</div>
       <div class="rail">${rail}</div>
     </div>
+    <div class="legend">${legend}</div>
     <div class="safety">Have a Safe &amp; Productive Day!</div>`;
 }
 
 /* ============================ Render: EDIT ============================ */
+function statusOptions(cur){
+  const c = STATUS[cur] ? cur : "";
+  return STATUS_ORDER.map(k=>`<option value="${k}" ${k===c?'selected':''}>${STATUS[k].label}</option>`).join('');
+}
 function renderEdit(){
   const lineCards = board.lines.map((l,idx)=>{
     const sizeOpts = sizeOptionsFor(l.lineNo, l.size);
+    const sd = STATUS[statusOf(l)];
     const opFields = OP_ROLES.map(([k,label])=>`
       <div class="fld"><label>${label}</label>
         <input value="${esc(l.ops[k]||'')}" data-line="${idx}" data-op="${k}"></div>`).join('');
-    return `<div class="ecard ${l.changeover?'co':''}">
+    return `<div class="ecard" style="border-top-color:${sd.color}">
       <div class="eh">
         <span class="lc-no">Line</span>
         <input class="lineno mono" value="${esc(l.lineNo)}" data-line="${idx}" data-f="lineNo">
-        <button class="cotoggle ${l.changeover?'on':''}" data-coline="${idx}">⟳ Change-over ${l.changeover?'ON':'OFF'}</button>
         <div class="spacer" style="flex:1"></div>
         <button class="rm" data-rmline="${idx}">Remove</button>
       </div>
       <div class="row2">
+        <div class="fld"><label>Status</label>
+          <select class="status-sel" data-line="${idx}" data-f="status" style="border-color:${sd.color}">${statusOptions(l.status)}</select></div>
         <div class="fld"><label>Can size</label>
           <select data-line="${idx}" data-f="size">${sizeOpts}</select></div>
-        <div class="fld"><label>Customer</label>
-          <input value="${esc(l.cust)}" data-line="${idx}" data-f="cust" placeholder="e.g. Juanitas"></div>
       </div>
+      <div class="fld"><label>Customer</label>
+        <input value="${esc(l.cust)}" data-line="${idx}" data-f="cust" placeholder="e.g. Juanitas"></div>
       <div class="fld"><label>Note <span class="hint">(optional)</span></label>
         <input value="${esc(l.desc)}" data-line="${idx}" data-f="desc" placeholder="anything the crew should know"></div>
 
@@ -462,7 +491,7 @@ function renderEdit(){
       <div class="edit-lines">${lineCards}
         <button class="addline" id="addLine">+ Add line</button>
       </div>
-      <div class="ecard">
+      <div class="ecard" style="border-top-color:var(--edge)">
         <div class="subhead">Absent, vacation &amp; support crew</div>
         <div class="edit-staff">${staffFields}</div>
       </div>
@@ -491,13 +520,18 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.dataset.op){ l.ops[t.dataset.op]=t.value; scheduleSave(); return; }
     if(t.dataset.f){
       const f=t.dataset.f; l[f]=t.value;
+      if(f==='status'){ scheduleSave(); render(); return; }        // recolor card + header
+      if(f==='size'){
+        if(t.value && !l.status) l.status='run1';                  // picked a size → assume running
+        else if(!t.value) l.status='';                             // cleared size → idle
+        scheduleSave(); render(); return;
+      }
       if(f==='lineNo'){
         // refresh just this line's size options in place (keeps cursor in the field)
         const sel=document.querySelector(`.edit-lines select[data-line="${idx}"][data-f="size"]`);
         if(sel) sel.innerHTML=sizeOptionsFor(l.lineNo,l.size);
       }
       scheduleSave();
-      if(f==='order'||f==='made') updateCoChip(); // cheap, keeps header honest
       return;
     }
   }
@@ -506,7 +540,6 @@ document.getElementById('view').addEventListener('input', e=>{
 document.getElementById('view').addEventListener('click', async e=>{
   const t=e.target;
   if(t.id==='addLine'){ board.lines.push(blankLine("")); scheduleSave(); render(); }
-  else if(t.dataset.coline!==undefined){ const i=+t.dataset.coline; board.lines[i].changeover=!board.lines[i].changeover; scheduleSave(); render(); }
   else if(t.dataset.rmline!==undefined){ board.lines.splice(+t.dataset.rmline,1); scheduleSave(); render(); }
   else if(t.id==='clearDay'){ if(confirm('Clear all entries for this day?')){ board=blankBoard(curDate); scheduleSave(); render(); } }
   else if(t.id==='copyPrev'){ await copyFromYesterday(); }
@@ -519,10 +552,11 @@ async function copyFromYesterday(){
   catch(err){ alert('Could not reach the board server to load '+fmtDateLong(prev)); return; }
   if(!src){ alert('No board found for '+fmtDateLong(prev)); return; }
   // Copy the setup (lines, positions, staffing, standing orders) as a starting
-  // point. A change-over is a one-day event, so clear the flag for the new day.
+  // point. A change-over is a one-day event — once it's done the line is running
+  // that size, so roll CO forward to Run 1st for the new day.
   board = normalizeBoard(JSON.parse(JSON.stringify(src)));
   board.date=curDate;
-  board.lines.forEach(l=>{ l.changeover=false; });
+  board.lines.forEach(l=>{ if(l.status==='co') l.status='run1'; });
   scheduleSave(); render();
 }
 
