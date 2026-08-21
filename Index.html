@@ -228,10 +228,10 @@
      one landscape sheet and carry a centered title header with the date. */
   .print-title{display:none}
   @media print{
-    @page{size:landscape;margin:9mm}
+    @page{size:landscape;margin:0.18in}   /* just clear of the ~0.15in printer dead zone */
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
     html,body{background:var(--bg) !important;color:var(--text) !important}
-    .topbar,.foot-note,#conflictBox,.safety{display:none !important}
+    .topbar,.foot-note,#conflictBox{display:none !important}
     main{padding:0 !important}
     .print-title{display:block;text-align:center;font-family:var(--disp);font-weight:800;
       font-size:21px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
@@ -258,7 +258,8 @@
     .rail h3{font-size:13px}
     .rail .panel{padding:8px 10px}
     .setup{padding-top:6px}
-    .legend{margin-top:8px}
+    .legend{margin-top:6px}
+    .safety{font-size:15px !important;padding:7px !important;margin-top:6px}
 
     /* WHITE option: light, ink-friendly background you can write on */
     body.print-light{background:#fff !important;color:#111 !important}
@@ -322,7 +323,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v21';
+var APP_VERSION = 'v22';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
