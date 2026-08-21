@@ -167,7 +167,9 @@
   /* press department rows */
   .pressrows{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
   .pressrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .pressrow .press-unit{flex:0 0 130px}
+  .pressrow .press-unit{flex:0 0 140px;background:var(--panel2);color:var(--text);
+    border:1px solid var(--edge2);border-radius:5px;padding:8px 9px;font-size:15px;
+    font-family:var(--disp);font-weight:700;letter-spacing:.03em}
   .pressrow .names{flex:1 1 200px;margin:0}
   .pressrow .pressrm{flex:0 0 auto;padding:6px 10px}
   .subhead{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
@@ -181,6 +183,8 @@
     padding:9px;font-family:var(--disp);font-weight:600;letter-spacing:.05em;font-size:13px;text-transform:uppercase}
   .addjob:hover{color:var(--amber);border-color:var(--amber-d)}
   .edit-staff{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+  .staff-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  @media(max-width:820px){.staff-row{grid-template-columns:1fr}}
   .rm{background:transparent;color:var(--dim);border:1px solid var(--edge2);border-radius:4px;padding:5px 9px;font-size:12px}
   .rm:hover{color:var(--red);border-color:var(--red)}
   .hidebtn{background:transparent;color:var(--muted);border:1px solid var(--edge2);border-radius:4px;padding:5px 11px;font-size:12px;font-weight:600;cursor:pointer}
@@ -318,7 +322,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v20';
+var APP_VERSION = 'v21';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -928,6 +932,20 @@ function renderEdit(){
         <button class="btn" id="clearDay">Clear this day</button>
       </div>
       <div id="conflictBox">${conflictBannerHTML()}</div>
+      <div class="edit-lines">${lineCards}
+        <button class="addline" id="addLine">+ Add line</button>
+      </div>
+      <div class="staff-row">
+        <div class="ecard" style="border-top-color:var(--edge)">
+          <div class="subhead">Press Department <span class="hint">(pick a press &amp; its operator — ＋ person for a trainee, ＋ add press for another)</span></div>
+          <div class="pressrows">${pressFields}</div>
+          <button class="addline" id="addPressRow">＋ add press</button>
+        </div>
+        <div class="ecard" style="border-top-color:var(--edge)">
+          <div class="subhead">Absent, vacation &amp; support crew</div>
+          <div class="edit-staff">${staffPeople}${staffText}</div>
+        </div>
+      </div>
       <div class="ecard" style="border-top-color:var(--edge)">
         <div class="subhead">People / Roster <span class="hint">(these names fill every dropdown — one shared list for all days)</span></div>
         <div class="roster">${rosterChips}</div>
@@ -935,18 +953,6 @@ function renderEdit(){
           <input id="newName" placeholder="Add a person's name…">
           <button class="btn" id="addName">Add</button>
         </div>
-      </div>
-      <div class="edit-lines">${lineCards}
-        <button class="addline" id="addLine">+ Add line</button>
-      </div>
-      <div class="ecard" style="border-top-color:var(--edge)">
-        <div class="subhead">Press Department <span class="hint">(pick a press &amp; its operator — ＋ person for a trainee, ＋ add press for another)</span></div>
-        <div class="pressrows">${pressFields}</div>
-        <button class="addline" id="addPressRow">＋ add press</button>
-      </div>
-      <div class="ecard" style="border-top-color:var(--edge)">
-        <div class="subhead">Absent, vacation &amp; support crew</div>
-        <div class="edit-staff">${staffPeople}${staffText}</div>
       </div>
     </div>`;
   updateSaveChip();
