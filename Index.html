@@ -241,7 +241,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v12';
+var APP_VERSION = 'v13';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -346,7 +346,7 @@ function commas(n){ return n==null||n===''?'':Number(n).toLocaleString('en-US');
    same size, different customer — each with its own code, ends and order qty.
    status: "" idle / run1 / run2 / backup / rwr / co  (colored pill + border).
    ops[k]: ARRAY of up to 3 names per position (extras = trainees / 2nd person). */
-function blankJob(){ return { code:"", cust:"", ends:"", order:"", made:"" }; }
+function blankJob(){ return { code:"", cust:"", ends:"", order:"", made:"", pallet:[] }; }
 /* Press Department: an object keyed by press unit, each an array of operator names.
    Starts empty (no slots) so an unstaffed press just doesn't show on the board. */
 function blankPresses(){ const o={}; PRESS_UNITS.forEach(u=>{ o[u]=[]; }); return o; }
@@ -356,7 +356,7 @@ function pressArr(p,u){
   return v.map(s=>String(s==null?'':s)).slice(0,MAX_PER_POS);
 }
 function blankLine(lineNo){
-  return { lineNo:String(lineNo), status:"", size:"", desc:"", po:"", pallet:[], hidden:false,
+  return { lineNo:String(lineNo), status:"", size:"", desc:"", po:"", hidden:false,
     ops:{bodymaker:[""],doubleSeamer:[""],palletizer:[""],frameStraps:[""],forklift:[""]},
     jobs:[ blankJob() ] };
 }
@@ -380,21 +380,26 @@ function normalizeLine(l){
   const b=blankLine(l.lineNo||"");
   l.ops = l.ops || {};
   OP_ROLES.forEach(([k])=>{ const a=opArr(l,k); l.ops[k]=a.length?a:[""]; });
+  const palOf=(v)=> Array.isArray(v) ? v.map(x=>String(x==null?'':x)).filter(Boolean)
+                   : (typeof v==='string' && v.trim() ? [v.trim()] : []);
   // jobs: use the array if present, else build one from legacy flat fields
   if(Array.isArray(l.jobs) && l.jobs.length){
     l.jobs = l.jobs.map(j=>({ code:String(j.code||''), cust:String(j.cust||''),
-      ends:String(j.ends||''), order:String(j.order==null?'':j.order), made:String(j.made==null?'':j.made) })).slice(0,MAX_JOBS);
+      ends:String(j.ends||''), order:String(j.order==null?'':j.order), made:String(j.made==null?'':j.made),
+      pallet:palOf(j.pallet) })).slice(0,MAX_JOBS);
   }else{
     const j1={ code:String(l.code||''), cust:String(l.cust||l.of||''), ends:String(l.ends1||''),
-      order:String(l.order==null?'':l.order), made:String(l.made==null?'':l.made) };
+      order:String(l.order==null?'':l.order), made:String(l.made==null?'':l.made), pallet:[] };
     l.jobs=[j1];
-    if(l.ends2) l.jobs.push({ code:'', cust:'', ends:String(l.ends2), order:'', made:'' });
+    if(l.ends2) l.jobs.push({ code:'', cust:'', ends:String(l.ends2), order:'', made:'', pallet:[] });
   }
+  // legacy: pallet used to live on the line — move it onto the first product
+  const linePallet = palOf(l.pallet);
+  if(linePallet.length && l.jobs[0] && !l.jobs[0].pallet.length) l.jobs[0].pallet = linePallet;
+  delete l.pallet;
   for(const k in b) if(k!=='ops' && k!=='jobs' && l[k]===undefined) l[k]=b[k];
   l.po = String(l.po==null?'':l.po);
   l.hidden = !!l.hidden;
-  l.pallet = Array.isArray(l.pallet) ? l.pallet.map(x=>String(x==null?'':x)).filter(Boolean)
-           : (typeof l.pallet==='string' && l.pallet.trim() ? [l.pallet.trim()] : []);
   if(l.status===undefined || l.status===null){     // migrate legacy changeover flag
     l.status = l.changeover ? 'co' : (l.size ? 'run1' : '');
   }
@@ -421,18 +426,18 @@ async function loadRoster(){
   try{ const r = await Store.getRoster(); roster = Array.isArray(r)?r:[]; }
   catch(e){ roster = []; }
 }
-/* Carry a saved day forward as the starting point for the next work-day:
-   - a change-over is a one-day event, so CO rolls to Run 1st;
-   - each job's remaining order = previous remaining − what was made, and the
-     day's "made" resets, so a big order counts down day by day and repeats. */
+/* Carry a saved day forward as the starting point for the next work-day.
+   Status is kept exactly as it was (a CO stays a CO). Each job's remaining
+   order = previous remaining − what was made yesterday; that made amount is
+   remembered as "made yesterday" and the running "made" field resets, so a
+   big order counts down day by day and repeats. */
 function seedFromBoard(src){
   const bd = normalizeBoard(JSON.parse(JSON.stringify(src)));
   bd.lines.forEach(l=>{
-    if(l.status==='co') l.status='run1';
     (l.jobs||[]).forEach(j=>{
       const o=num(j.order), m=num(j.made);
       if(o) j.order = String(Math.max(o-m,0));   // remaining carries over
-      j.made = "";                                // fresh day
+      j.made = "";                                // fresh day — enter yesterday's run again
     });
   });
   return bd;
@@ -532,12 +537,17 @@ function orderInline(j){
   const m=num(j.made);
   if(!m) return `<span><span class="lbl">Order</span> <b>${commas(o)}</b></span>`;
   const left=Math.max(o-m,0), done=m>=o;
-  return `<span><span class="lbl">Order</span> <b>${commas(o)}</b> · ${done?'<span class="done">✓ complete</span>':(commas(m)+' made · '+commas(left)+' left')}</span>`;
+  return `<span><span class="lbl">Order</span> <b>${commas(o)}</b> · ${done?'<span class="done">✓ complete</span>':(commas(m)+' made yesterday · '+commas(left)+' left')}</span>`;
 }
 function cardHTML(l){
   const st=statusOf(l), sd=STATUS[st];
-  const jobs = (l.jobs||[]).filter(j=>j.cust||j.code||j.ends||j.order);
-  const jobsHTML = jobs.map(j=>`
+  const jobs = (l.jobs||[]).filter(j=>j.cust||j.code||j.ends||j.order||(j.pallet&&j.pallet.length));
+  const jobsHTML = jobs.map(j=>{
+    const pal=(j.pallet||[]).filter(Boolean);
+    const palHTML = pal.length
+      ? `<div class="setup"><span class="setup-lbl">Set-up</span>${pal.map(p=>`<span class="pal">${esc(p)}</span>`).join('')}</div>`
+      : '';
+    return `
     <div class="job">
       <div class="job-head">
         ${j.cust?`<span class="job-cust">${esc(j.cust)}</span>`:''}
@@ -547,7 +557,8 @@ function cardHTML(l){
         ${j.ends?`<span><span class="lbl">Ends</span> <b>${esc(j.ends)}</b></span>`:''}
         ${orderInline(j)}
       </div>
-    </div>`).join('');
+      ${palHTML}
+    </div>`;}).join('');
   const ops = OP_ROLES.map(([k,label])=>{
     const names = opArr(l,k).map(s=>s.trim()).filter(Boolean);
     const who = names.length
@@ -555,10 +566,6 @@ function cardHTML(l){
       : `<span class="who empty">—</span>`;
     return `<div class="op"><span class="role">${label}</span>${who}</div>`;
   }).join('');
-  const pallet=(l.pallet||[]).filter(Boolean);
-  const palHTML = pallet.length
-    ? `<div class="setup"><span class="setup-lbl">Set-up</span>${pallet.map(p=>`<span class="pal">${esc(p)}</span>`).join('')}</div>`
-    : '';
   return `<div class="line-card${st===''?' idle':''}" style="border-top-color:${sd.color}">
     <div class="lc-head">
       <span class="lc-no">Line ${esc(l.lineNo)}</span>
@@ -572,7 +579,6 @@ function cardHTML(l){
       ${l.po?`<span class="lc-po"><span class="lbl">PO</span> ${esc(l.po)}</span>`:''}
     </div>
     ${jobsHTML?`<div class="jobs">${jobsHTML}</div>`:''}
-    ${palHTML}
     <div class="ops">${ops}</div>
   </div>`;
 }
@@ -675,11 +681,12 @@ function renderEdit(){
     const sd = STATUS[statusOf(l)];
     const opFields = OP_ROLES.map(([k,label])=>`
       <div class="fld"><label>${label}</label>${posInputs(l,idx,k)}</div>`).join('');
-    const palPick = PALLET_OPTS.map(opt=>{
-      const on=(l.pallet||[]).includes(opt);
-      return `<button class="palchip${on?' on':''}" data-line="${idx}" data-pallet="${esc(opt)}">${esc(opt)}</button>`;
-    }).join('');
-    const jobFields = (l.jobs||[]).map((j,ji)=>`
+    const jobFields = (l.jobs||[]).map((j,ji)=>{
+      const palPick = PALLET_OPTS.map(opt=>{
+        const on=(j.pallet||[]).includes(opt);
+        return `<button class="palchip${on?' on':''}" data-line="${idx}" data-job="${ji}" data-pallet="${esc(opt)}">${esc(opt)}</button>`;
+      }).join('');
+      return `
       <div class="jobedit">
         <div class="jobedit-h"><span>Product ${ji+1}</span>${l.jobs.length>1?`<button data-rmjob="${idx}" data-ji="${ji}">remove</button>`:''}</div>
         <div class="row2">
@@ -693,10 +700,12 @@ function renderEdit(){
             <input value="${esc(j.ends)}" data-line="${idx}" data-job="${ji}" data-jf="ends"></div>
           <div class="fld"><label>Order qty <span class="hint">(remaining — blank = none)</span></label>
             <input class="mono" inputmode="numeric" value="${esc(j.order)}" data-line="${idx}" data-job="${ji}" data-jf="order"></div>
-          <div class="fld"><label>Made today <span class="hint">(deducts &amp; carries over)</span></label>
+          <div class="fld"><label>Made yesterday <span class="hint">(deducts &amp; carries over)</span></label>
             <input class="mono" inputmode="numeric" value="${esc(j.made)}" data-line="${idx}" data-job="${ji}" data-jf="made"></div>
         </div>
-      </div>`).join('');
+        <div class="fld"><label>Pallet set-up <span class="hint">(tap all that apply — mix &amp; match)</span></label>
+          <div class="pallet-pick">${palPick}</div></div>
+      </div>`;}).join('');
     return `<div class="ecard${l.hidden?' is-hidden':''}" style="border-top-color:${sd.color}">
       <div class="eh">
         <span class="lc-no">Line</span>
@@ -722,12 +731,9 @@ function renderEdit(){
       <div class="subhead">Positions <span class="hint">(pick from the roster — add a 2nd for a trainee)</span></div>
       <div class="ops-edit">${opFields}</div>
 
-      <div class="subhead">Products <span class="hint">(same size, different customer = add another)</span></div>
+      <div class="subhead">Products <span class="hint">(same size, different customer = add another — each has its own set-up)</span></div>
       ${jobFields}
       ${l.jobs.length<MAX_JOBS?`<button class="addjob" data-addjob="${idx}">＋ add another product / customer</button>`:''}
-
-      <div class="subhead">Pallet set-up <span class="hint">(tap all that apply — mix &amp; match)</span></div>
-      <div class="pallet-pick">${palPick}</div>
     </div>`;
   }).join('');
 
@@ -872,12 +878,14 @@ document.getElementById('view').addEventListener('click', async e=>{
     if(!Array.isArray(board.staff.presses[u])) board.staff.presses[u]=[];
     if(board.staff.presses[u].length<MAX_PER_POS){ board.staff.presses[u].push(""); scheduleSave(); render(); }
   }
-  else if(t.dataset.pallet!==undefined){                         // toggle a pallet set-up option
-    const L=board.lines[+t.dataset.line], opt=t.dataset.pallet;
-    if(!Array.isArray(L.pallet)) L.pallet=[];
-    const i=L.pallet.indexOf(opt);
-    if(i>=0) L.pallet.splice(i,1); else L.pallet.push(opt);
-    scheduleSave(); render();
+  else if(t.dataset.pallet!==undefined){                         // toggle a product's pallet set-up option
+    const L=board.lines[+t.dataset.line], j=L&&L.jobs[+t.dataset.job], opt=t.dataset.pallet;
+    if(j){
+      if(!Array.isArray(j.pallet)) j.pallet=[];
+      const i=j.pallet.indexOf(opt);
+      if(i>=0) j.pallet.splice(i,1); else j.pallet.push(opt);
+      scheduleSave(); render();
+    }
   }
   else if(t.dataset.hideline!==undefined){                       // hide/show a line on the board
     const L=board.lines[+t.dataset.hideline];
