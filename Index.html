@@ -162,6 +162,14 @@
     background:var(--panel2);color:var(--muted);border:1px solid var(--edge2);border-radius:7px;padding:8px 13px}
   .palchip:hover{border-color:var(--blue);color:var(--text)}
   .palchip.on{background:rgba(58,160,255,.16);border-color:var(--blue);color:var(--blue)}
+  /* red highlight on a field that's part of a scheduling conflict */
+  select.conflict{border:2px solid var(--red) !important;background:rgba(239,68,68,.16) !important}
+  /* press department rows */
+  .pressrows{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+  .pressrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .pressrow .press-unit{flex:0 0 130px}
+  .pressrow .names{flex:1 1 200px;margin:0}
+  .pressrow .pressrm{flex:0 0 auto;padding:6px 10px}
   .subhead{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
     color:var(--muted);margin:8px 0 4px}
   .jobedit{border:1px solid var(--edge);border-radius:6px;padding:10px;margin-bottom:8px;background:#131a22}
@@ -310,7 +318,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v19';
+var APP_VERSION = 'v20';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -416,13 +424,24 @@ function commas(n){ return n==null||n===''?'':Number(n).toLocaleString('en-US');
    status: "" idle / run1 / run2 / backup / rwr / co  (colored pill + border).
    ops[k]: ARRAY of up to 3 names per position (extras = trainees / 2nd person). */
 function blankJob(){ return { code:"", cust:"", ends:"", order:"", made:"", pallet:[] }; }
-/* Press Department: an object keyed by press unit, each an array of operator names.
-   Starts empty (no slots) so an unstaffed press just doesn't show on the board. */
-function blankPresses(){ const o={}; PRESS_UNITS.forEach(u=>{ o[u]=[]; }); return o; }
-function pressArr(p,u){
-  let v = p ? p[u] : undefined;
-  if(!Array.isArray(v)) v = (v==null||v==='') ? [] : [v];
-  return v.map(s=>String(s==null?'':s)).slice(0,MAX_PER_POS);
+/* Press Department: a list of running presses. Each row picks a press unit and
+   one or more operators — [{u:"13", ops:["Andy"]}, …]. Add a row per press. */
+function blankPressRow(){ return { u:"", ops:[""] }; }
+function normalizePresses(sp){
+  const out=[];
+  if(Array.isArray(sp)){
+    sp.forEach(e=>{
+      const u=String(e&&e.u!=null?e.u:'');
+      const ops=(Array.isArray(e&&e.ops)?e.ops:[]).map(x=>String(x==null?'':x)).slice(0,MAX_PER_POS);
+      if(u || ops.some(x=>x.trim())) out.push({u, ops:ops.length?ops:[""]});
+    });
+  }else if(sp && typeof sp==='object'){          // migrate old object model {u:[names]}
+    PRESS_UNITS.forEach(u=>{
+      const ops=(Array.isArray(sp[u])?sp[u]:[]).map(x=>String(x==null?'':x)).filter(Boolean);
+      if(ops.length) out.push({u, ops});
+    });
+  }
+  return out;
 }
 function blankLine(lineNo){
   return { lineNo:String(lineNo), status:"", size:"", desc:"", po:"", hidden:false,
@@ -431,7 +450,7 @@ function blankLine(lineNo){
 }
 function blankBoard(date){
   return { date, lines: DEFAULT_LINE_ORDER.map(blankLine),
-    staff:{absent:[],vacation:[],presses:blankPresses(),custodian:[]} };
+    staff:{absent:[],vacation:[],presses:[],custodian:[]} };
 }
 /* Names for a position, always as an array of strings (max MAX_PER_POS). */
 function opArr(l,k){
@@ -478,14 +497,10 @@ function normalizeBoard(bd){
   if(!bd.lines) bd.lines=[];
   bd.lines.forEach(normalizeLine);
   const s = bd.staff||{};
-  const presses = blankPresses();
-  if(s.presses && typeof s.presses==='object' && !Array.isArray(s.presses)){
-    PRESS_UNITS.forEach(u=>{ presses[u] = pressArr(s.presses, u); });
-  }
   bd.staff = {
     absent: toNameArr(s.absent),
     vacation: toNameArr(s.vacation),
-    presses: presses,
+    presses: normalizePresses(s.presses),
     custodian: toNameArr(s.custodian)
   };
   return bd;
@@ -587,8 +602,8 @@ function collectConflicts(){
     if(l.hidden) return;
     OP_ROLES.forEach(([key,label])=> opArr(l,key).forEach(n=> add(n,'Line '+(l.lineNo||'?')+' · '+label,'work')));
   });
-  const pr=board.staff.presses||{};
-  PRESS_UNITS.forEach(u=> pressArr(pr,u).forEach(n=> add(n,'Press '+u,'work')));
+  (board.staff.presses||[]).forEach(row=>
+    (row.ops||[]).forEach(n=> add(n,'Press '+(row.u||'?'),'work')));
   (board.staff.custodian||[]).forEach(n=> add(n,'Custodian','work'));
   (board.staff.absent||[]).forEach(n=> add(n,'Absent','absent'));
   (board.staff.vacation||[]).forEach(n=> add(n,'Vacation','vacation'));
@@ -620,10 +635,25 @@ function conflictBannerHTML(){
     <ul>${conflicts.map(c=>`<li><b>${esc(c.name)}</b> ${esc(c.msg)}</li>`).join('')}</ul>
   </div>`;
 }
-/* Update the conflict banner in place (no full re-render, so focus is kept). */
+/* Set of lowercased names currently in a conflict — used to flag the fields. */
+let CFLICT_SET = new Set();
+function conflictNames(){
+  const set=new Set();
+  collectConflicts().forEach(c=> set.add(String(c.name).trim().toLowerCase()));
+  return set;
+}
+function conflictClass(n){ return (n && CFLICT_SET.has(String(n).trim().toLowerCase())) ? ' conflict' : ''; }
+/* Update the banner AND the red field highlights in place (no full re-render). */
 function refreshConflicts(){
+  CFLICT_SET = conflictNames();
   const box=document.getElementById('conflictBox');
   if(box) box.innerHTML=conflictBannerHTML();
+  if(mode==='edit'){
+    document.querySelectorAll('#view select[data-op],#view select[data-staffp],#view select[data-pressrow]').forEach(sel=>{
+      const v=(sel.value||'').trim().toLowerCase();
+      sel.classList.toggle('conflict', !!v && CFLICT_SET.has(v));
+    });
+  }
 }
 function changeoverCount(){ return board.lines.filter(l=>l.status==='co').length; }
 function updateCoChip(){
@@ -738,11 +768,10 @@ function renderBoard(){
       ${items.length?`<ul>${items.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:`<div class="none">— none —</div>`}
     </div>`;
   }).join('');
-  const presses = board.staff.presses||{};
-  const pressRows = PRESS_UNITS.map(u=>{
-    const names = pressArr(presses,u).map(s=>s.trim()).filter(Boolean);
-    if(!names.length) return '';
-    return `<li><span class="press-no">Press ${esc(u)}</span><span class="press-op">${names.map(esc).join(', ')}</span></li>`;
+  const pressRows = (board.staff.presses||[]).map(row=>{
+    const names = (row.ops||[]).map(s=>String(s||'').trim()).filter(Boolean);
+    if(!row.u || !names.length) return '';
+    return `<li><span class="press-no">Press ${esc(row.u)}</span><span class="press-op">${names.map(esc).join(', ')}</span></li>`;
   }).filter(Boolean).join('');
   const railPresses = `<div class="panel ppress"><h3>Press Department</h3>
     ${pressRows?`<ul class="press-list">${pressRows}</ul>`:`<div class="none">— none —</div>`}
@@ -781,26 +810,43 @@ function nameOptions(cur){
 function posInputs(l, idx, k){
   const arr = opArr(l,k); const shown = arr.length?arr:[""];
   const selects = shown.map((n,i)=>
-    `<select class="${i>0?'trainee':''}" data-line="${idx}" data-op="${k}" data-i="${i}">${nameOptions(n)}</select>`).join('');
+    `<select class="${i>0?'trainee':''}${conflictClass(n)}" data-line="${idx}" data-op="${k}" data-i="${i}">${nameOptions(n)}</select>`).join('');
   const add = shown.length<MAX_PER_POS ? `<button class="addname" data-line="${idx}" data-addop="${k}">＋ add person</button>` : '';
   return `<div class="names">${selects}${add}</div>`;
 }
 function staffPeopleInputs(key){
   const arr=(Array.isArray(board.staff[key])?board.staff[key]:[]).map(s=>String(s||''));
   const shown = arr.length?arr:[""];
-  const sels = shown.map((n,i)=>`<select data-staffp="${key}" data-i="${i}">${nameOptions(n)}</select>`).join('');
+  const sels = shown.map((n,i)=>`<select class="${conflictClass(n).trim()}" data-staffp="${key}" data-i="${i}">${nameOptions(n)}</select>`).join('');
   const add = `<button class="addname" data-addstaff="${key}">＋ add person</button>`;
   return `<div class="names">${sels}${add}</div>`;
 }
-/* One press unit's operator dropdown(s): roster names, up to MAX_PER_POS people. */
-function pressInputs(u){
-  const arr = pressArr(board.staff.presses, u); const shown = arr.length?arr:[""];
-  const sels = shown.map((n,i)=>
-    `<select class="${i>0?'trainee':''}" data-press="${esc(u)}" data-i="${i}">${nameOptions(n)}</select>`).join('');
-  const add = shown.length<MAX_PER_POS ? `<button class="addname" data-addpress="${esc(u)}">＋ add person</button>` : '';
-  return `<div class="names">${sels}${add}</div>`;
+/* Press Department editor: one row per running press = [press ▾][name ▾ …][✕],
+   with an ＋ add press button below. */
+function pressUnitOptions(cur){
+  let opts=`<option value="">— press —</option>`;
+  let matched=false;
+  PRESS_UNITS.forEach(u=>{ const sel=(u===cur); if(sel)matched=true;
+    opts+=`<option value="${esc(u)}" ${sel?'selected':''}>Press ${esc(u)}</option>`; });
+  if(cur && !matched) opts+=`<option value="${esc(cur)}" selected>Press ${esc(cur)}</option>`;
+  return opts;
+}
+function pressEditRows(){
+  return board.staff.presses.map((row,ri)=>{
+    const ops=(row.ops&&row.ops.length)?row.ops:[""];
+    const nameSels=ops.map((n,i)=>
+      `<select class="${i>0?'trainee':''}${conflictClass(n)}" data-pressrow="${ri}" data-i="${i}">${nameOptions(n)}</select>`).join('');
+    const addPerson = ops.length<MAX_PER_POS ? `<button class="addname" data-addpressperson="${ri}">＋ person</button>`:'';
+    return `<div class="pressrow">
+      <select class="press-unit" data-pressunit="${ri}">${pressUnitOptions(row.u)}</select>
+      <div class="names">${nameSels}${addPerson}</div>
+      <button class="rm pressrm" data-rmpressrow="${ri}" title="Remove this press">✕</button>
+    </div>`;
+  }).join('');
 }
 function renderEdit(){
+  CFLICT_SET = conflictNames();                         // which name fields to flag red
+  if(!board.staff.presses.length) board.staff.presses.push(blankPressRow());  // one row to start
   const lineCards = board.lines.map((l,idx)=>{
     const sizeOpts = sizeOptionsFor(l.lineNo, l.size);
     const sd = STATUS[statusOf(l)];
@@ -871,8 +917,7 @@ function renderEdit(){
   const staffText = STAFF_TEXT.map(([k,label])=>`
     <div class="fld"><label>${label} — one name per line</label>
       <textarea data-staff="${k}" rows="4">${esc(board.staff[k]||'')}</textarea></div>`).join('');
-  const pressFields = PRESS_UNITS.map(u=>`
-    <div class="fld"><label>Press ${esc(u)}</label>${pressInputs(u)}</div>`).join('');
+  const pressFields = pressEditRows();
 
   document.getElementById('view').innerHTML = `
     <div class="edit-wrap">
@@ -895,8 +940,9 @@ function renderEdit(){
         <button class="addline" id="addLine">+ Add line</button>
       </div>
       <div class="ecard" style="border-top-color:var(--edge)">
-        <div class="subhead">Press Department <span class="hint">(pick an operator per press — add a 2nd for a trainee)</span></div>
-        <div class="edit-staff">${pressFields}</div>
+        <div class="subhead">Press Department <span class="hint">(pick a press &amp; its operator — ＋ person for a trainee, ＋ add press for another)</span></div>
+        <div class="pressrows">${pressFields}</div>
+        <button class="addline" id="addPressRow">＋ add press</button>
       </div>
       <div class="ecard" style="border-top-color:var(--edge)">
         <div class="subhead">Absent, vacation &amp; support crew</div>
@@ -904,6 +950,7 @@ function renderEdit(){
       </div>
     </div>`;
   updateSaveChip();
+  refreshConflicts();     // apply the red field highlights
 }
 
 function sizeOptionsFor(lineNo, current){
@@ -965,16 +1012,21 @@ document.getElementById('view').addEventListener('input', e=>{
     }
     board.staff[key][i]=t.value; scheduleSave(); return;
   }
-  if(t.dataset.press!==undefined && t.dataset.i!==undefined){    // press operator
-    const u=t.dataset.press, i=+t.dataset.i;
-    if(!board.staff.presses || typeof board.staff.presses!=='object') board.staff.presses=blankPresses();
-    if(!Array.isArray(board.staff.presses[u])) board.staff.presses[u]=[];
+  if(t.dataset.pressunit!==undefined){                          // which press this row is
+    const row=board.staff.presses[+t.dataset.pressunit];
+    if(row){ row.u=t.value; scheduleSave(); }
+    return;
+  }
+  if(t.dataset.pressrow!==undefined && t.dataset.i!==undefined){ // press operator name
+    const row=board.staff.presses[+t.dataset.pressrow], i=+t.dataset.i;
+    if(!row) return;
+    if(!Array.isArray(row.ops)) row.ops=[""];
     if(t.value==='__add__'){
       const name=(prompt('Add a new name to the roster:')||'').trim();
-      if(name){ rosterAdd(name); board.staff.presses[u][i]=name; }
+      if(name){ rosterAdd(name); row.ops[i]=name; }
       scheduleSave(); render(); return;
     }
-    board.staff.presses[u][i]=t.value; scheduleSave(); return;
+    row.ops[i]=t.value; scheduleSave(); return;
   }
   if(t.dataset.staff!==undefined){ board.staff[t.dataset.staff]=t.value; scheduleSave(); return; }
 });
@@ -987,6 +1039,7 @@ document.getElementById('view').addEventListener('keydown', e=>{
 document.getElementById('view').addEventListener('click', async e=>{
   const t=e.target;
   if(t.id==='addLine'){ board.lines.push(blankLine("")); scheduleSave(); render(); }
+  else if(t.id==='addPressRow'){ board.staff.presses.push(blankPressRow()); scheduleSave(); render(); }
   else if(t.id==='addName'){ const inp=document.getElementById('newName'); if(rosterAdd(inp&&inp.value)) render(); }
   else if(t.dataset.ri!==undefined){ rosterRemove(+t.dataset.ri); render(); }
   else if(t.dataset.addop!==undefined){                          // add a person to a position
@@ -998,11 +1051,14 @@ document.getElementById('view').addEventListener('click', async e=>{
     if(!Array.isArray(board.staff[key])) board.staff[key]=[];
     board.staff[key].push(""); scheduleSave(); render();
   }
-  else if(t.dataset.addpress!==undefined){                       // add an operator to a press
-    const u=t.dataset.addpress;
-    if(!board.staff.presses || typeof board.staff.presses!=='object') board.staff.presses=blankPresses();
-    if(!Array.isArray(board.staff.presses[u])) board.staff.presses[u]=[];
-    if(board.staff.presses[u].length<MAX_PER_POS){ board.staff.presses[u].push(""); scheduleSave(); render(); }
+  else if(t.dataset.addpressperson!==undefined){                 // add a trainee to a press row
+    const row=board.staff.presses[+t.dataset.addpressperson];
+    if(row){ if(!Array.isArray(row.ops)) row.ops=[""];
+      if(row.ops.length<MAX_PER_POS){ row.ops.push(""); scheduleSave(); render(); } }
+  }
+  else if(t.dataset.rmpressrow!==undefined){                     // remove a press row
+    board.staff.presses.splice(+t.dataset.rmpressrow,1);
+    scheduleSave(); render();
   }
   else if(t.dataset.pallet!==undefined){                         // toggle a product's pallet set-up option
     const L=board.lines[+t.dataset.line], j=L&&L.jobs[+t.dataset.job], opt=t.dataset.pallet;
