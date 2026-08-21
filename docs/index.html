@@ -326,7 +326,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v24';
+var APP_VERSION = 'v25';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -381,8 +381,16 @@ const STAFF_PEOPLE = [["absent","Absent","pab"], ["vacation","Vacation","pvac"],
 const STAFF_TEXT   = [];
 /* Press / Litho units — each gets its own operator dropdown (roster names, up to MAX_PER_POS). */
 const PRESS_UNITS = ["13","15","16","17","18","19","20","3","2-SS","3-SS"];
-/* Pallet set-up options — a line can carry any mix of these. */
-const PALLET_OPTS = ["2 Straps","4 Straps","Cover Caps","Plastic Frames","Wood Frame","Plastic Pallet","Wood Pallet"];
+/* Pallet set-up options, in the order they should always display:
+   straps → cover caps → frame → pallet type. Wood pallet is the implied
+   default (95% of jobs), so only the plastic exception is listed. */
+const PALLET_OPTS = ["2 Straps","4 Straps","Cover Caps","Plastic Frames","Wood Frame","Plastic Pallet"];
+function sortPallet(arr){
+  return (arr||[]).filter(Boolean).slice().sort((a,b)=>{
+    const ia=PALLET_OPTS.indexOf(a), ib=PALLET_OPTS.indexOf(b);
+    return (ia<0?99:ia)-(ib<0?99:ib);
+  });
+}
 
 /* ============================ Storage layer ============================
    When API_URL is set, reads/writes go to the Cloudflare Worker (KV-backed) so
@@ -476,8 +484,9 @@ function normalizeLine(l){
   const b=blankLine(l.lineNo||"");
   l.ops = l.ops || {};
   OP_ROLES.forEach(([k])=>{ const a=opArr(l,k); l.ops[k]=a.length?a:[""]; });
-  const palOf=(v)=> Array.isArray(v) ? v.map(x=>String(x==null?'':x)).filter(Boolean)
-                   : (typeof v==='string' && v.trim() ? [v.trim()] : []);
+  const palOf=(v)=> (Array.isArray(v) ? v.map(x=>String(x==null?'':x)).filter(Boolean)
+                   : (typeof v==='string' && v.trim() ? [v.trim()] : []))
+                   .filter(x=>x!=='Wood Pallet');   // wood is the implied default
   // jobs: use the array if present, else build one from legacy flat fields
   if(Array.isArray(l.jobs) && l.jobs.length){
     l.jobs = l.jobs.map(j=>({ code:String(j.code||''), cust:String(j.cust||''),
@@ -705,7 +714,7 @@ function cardHTML(l){
   const st=statusOf(l), sd=STATUS[st];
   const jobs = (l.jobs||[]).filter(j=>j.cust||j.code||j.ends||j.order||(j.pallet&&j.pallet.length));
   const jobsHTML = jobs.map(j=>{
-    const pal=(j.pallet||[]).filter(Boolean);
+    const pal=sortPallet(j.pallet);
     const palHTML = pal.length
       ? `<div class="setup"><span class="setup-lbl">Set-up</span>${pal.map(p=>`<span class="pal">${esc(p)}</span>`).join('')}</div>`
       : '';
