@@ -175,6 +175,12 @@
   .edit-staff{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
   .rm{background:transparent;color:var(--dim);border:1px solid var(--edge2);border-radius:4px;padding:5px 9px;font-size:12px}
   .rm:hover{color:var(--red);border-color:var(--red)}
+  .hidebtn{background:transparent;color:var(--muted);border:1px solid var(--edge2);border-radius:4px;padding:5px 11px;font-size:12px;font-weight:600;cursor:pointer}
+  .hidebtn:hover{color:var(--text);border-color:var(--muted)}
+  .hidebtn.on{color:var(--amber);border-color:var(--amber-d)}
+  .hidden-tag{font-family:var(--disp);font-weight:700;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--amber);background:rgba(255,179,0,.08);border:1px solid var(--amber-d);border-radius:4px;padding:2px 7px}
+  .ecard.is-hidden{opacity:.6}
   .addline{background:var(--panel2);border:1px dashed var(--edge2);color:var(--muted);border-radius:8px;
     padding:16px;font-family:var(--disp);font-weight:600;letter-spacing:.06em;font-size:15px;text-transform:uppercase}
   .addline:hover{color:var(--amber);border-color:var(--amber-d)}
@@ -235,7 +241,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v11';
+var APP_VERSION = 'v12';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -350,7 +356,7 @@ function pressArr(p,u){
   return v.map(s=>String(s==null?'':s)).slice(0,MAX_PER_POS);
 }
 function blankLine(lineNo){
-  return { lineNo:String(lineNo), status:"", size:"", desc:"", po:"", pallet:[],
+  return { lineNo:String(lineNo), status:"", size:"", desc:"", po:"", pallet:[], hidden:false,
     ops:{bodymaker:[""],doubleSeamer:[""],palletizer:[""],frameStraps:[""],forklift:[""]},
     jobs:[ blankJob() ] };
 }
@@ -386,6 +392,7 @@ function normalizeLine(l){
   }
   for(const k in b) if(k!=='ops' && k!=='jobs' && l[k]===undefined) l[k]=b[k];
   l.po = String(l.po==null?'':l.po);
+  l.hidden = !!l.hidden;
   l.pallet = Array.isArray(l.pallet) ? l.pallet.map(x=>String(x==null?'':x)).filter(Boolean)
            : (typeof l.pallet==='string' && l.pallet.trim() ? [l.pallet.trim()] : []);
   if(l.status===undefined || l.status===null){     // migrate legacy changeover flag
@@ -414,11 +421,44 @@ async function loadRoster(){
   try{ const r = await Store.getRoster(); roster = Array.isArray(r)?r:[]; }
   catch(e){ roster = []; }
 }
+/* Carry a saved day forward as the starting point for the next work-day:
+   - a change-over is a one-day event, so CO rolls to Run 1st;
+   - each job's remaining order = previous remaining − what was made, and the
+     day's "made" resets, so a big order counts down day by day and repeats. */
+function seedFromBoard(src){
+  const bd = normalizeBoard(JSON.parse(JSON.stringify(src)));
+  bd.lines.forEach(l=>{
+    if(l.status==='co') l.status='run1';
+    (l.jobs||[]).forEach(j=>{
+      const o=num(j.order), m=num(j.made);
+      if(o) j.order = String(Math.max(o-m,0));   // remaining carries over
+      j.made = "";                                // fresh day
+    });
+  });
+  return bd;
+}
+/* Most recent saved board within a few work-days back (skips weekends/gaps). */
+async function findSeedBoard(date){
+  let d=date;
+  for(let i=0;i<6;i++){
+    d=shiftWorkday(d,-1);
+    try{ const b=await Store.get(keyFor(d)); if(b) return b; }
+    catch(e){ return null; }
+  }
+  return null;
+}
 async function loadBoard(date){
   loadError = null;
   try{
     const existing = await Store.get(keyFor(date));
-    board = existing ? normalizeBoard(existing) : blankBoard(date);
+    if(existing){
+      board = normalizeBoard(existing);
+    }else{
+      // No board saved yet for this day — carry the previous work-day forward
+      // (production rarely changes much). Not saved until someone edits it.
+      const seed = await findSeedBoard(date);
+      board = seed ? seedFromBoard(seed) : blankBoard(date);
+    }
   }catch(e){
     // Couldn't reach the board store. Show an empty day but WARN, because any
     // edit from here would overwrite whatever the server actually holds.
@@ -537,19 +577,24 @@ function cardHTML(l){
   </div>`;
 }
 function renderBoard(){
-  // Group lines by status so each falls into a fixed quadrant of the board.
+  // Hidden lines never show on the board. Group the rest by status.
   const byStatus={};
-  board.lines.forEach(l=>{ const st=statusOf(l); (byStatus[st]||(byStatus[st]=[])).push(l); });
-  function quad(k){
-    const ls=byStatus[k]||[];
+  board.lines.filter(l=>!l.hidden).forEach(l=>{ const st=statusOf(l); (byStatus[st]||(byStatus[st]=[])).push(l); });
+  const idlePool=(byStatus['']||[]).slice();   // idle tiles, used to fill empty zones
+  function zone(k){
+    let ls=byStatus[k]||[];
+    if(!ls.length && idlePool.length) ls=[idlePool.shift()];   // empty zone → drop in an idle tile
     const inner = ls.length ? ls.map(cardHTML).join('') : `<div class="quad-empty"></div>`;
     return `<div class="quad"><div class="quad-cards">${inner}</div></div>`;
   }
   // Fixed 2×2 map: Run 1st TL · Back Up TR · Run 2nd BL · Change Over BR.
-  const mainQuads=["run1","backup","run2","co"].map(quad).join('');
-  // RWR and idle lines only show when there are any, below the map.
-  const extras=["rwr",""].filter(k=>(byStatus[k]||[]).length).map(quad).join('');
-  const boardMain=`<div class="board-quad">${mainQuads}</div>${extras?`<div class="board-extra">${extras}</div>`:''}`;
+  const mainQuads=["run1","backup","run2","co"].map(zone).join('');
+  // RWR lines plus any idle tiles that didn't fit a zone show below.
+  const extrasLines=(byStatus['rwr']||[]).concat(idlePool);
+  const extras=extrasLines.length
+    ? `<div class="board-extra">${extrasLines.map(l=>`<div class="quad"><div class="quad-cards">${cardHTML(l)}</div></div>`).join('')}</div>`
+    : '';
+  const boardMain=`<div class="board-quad">${mainQuads}</div>${extras}`;
 
   const railPeople = STAFF_PEOPLE.map(([k,label,accent])=>{
     const items=(board.staff[k]||[]).map(s=>String(s||'').trim()).filter(Boolean);
@@ -646,17 +691,19 @@ function renderEdit(){
         <div class="row3">
           <div class="fld"><label>Ends</label>
             <input value="${esc(j.ends)}" data-line="${idx}" data-job="${ji}" data-jf="ends"></div>
-          <div class="fld"><label>Order qty <span class="hint">(blank = none)</span></label>
+          <div class="fld"><label>Order qty <span class="hint">(remaining — blank = none)</span></label>
             <input class="mono" inputmode="numeric" value="${esc(j.order)}" data-line="${idx}" data-job="${ji}" data-jf="order"></div>
-          <div class="fld"><label>Made <span class="hint">(optional)</span></label>
+          <div class="fld"><label>Made today <span class="hint">(deducts &amp; carries over)</span></label>
             <input class="mono" inputmode="numeric" value="${esc(j.made)}" data-line="${idx}" data-job="${ji}" data-jf="made"></div>
         </div>
       </div>`).join('');
-    return `<div class="ecard" style="border-top-color:${sd.color}">
+    return `<div class="ecard${l.hidden?' is-hidden':''}" style="border-top-color:${sd.color}">
       <div class="eh">
         <span class="lc-no">Line</span>
         <input class="lineno mono" value="${esc(l.lineNo)}" data-line="${idx}" data-f="lineNo">
+        ${l.hidden?`<span class="hidden-tag">hidden from board</span>`:''}
         <div class="spacer" style="flex:1"></div>
+        <button class="hidebtn${l.hidden?' on':''}" data-hideline="${idx}">${l.hidden?'Show':'Hide'}</button>
         <button class="rm" data-rmline="${idx}">Remove</button>
       </div>
       <div class="row2">
@@ -832,6 +879,10 @@ document.getElementById('view').addEventListener('click', async e=>{
     if(i>=0) L.pallet.splice(i,1); else L.pallet.push(opt);
     scheduleSave(); render();
   }
+  else if(t.dataset.hideline!==undefined){                       // hide/show a line on the board
+    const L=board.lines[+t.dataset.hideline];
+    L.hidden=!L.hidden; scheduleSave(); render();
+  }
   else if(t.dataset.addjob!==undefined){                         // add a product/job to a line
     const i=+t.dataset.addjob, L=board.lines[i];
     if(L.jobs.length<MAX_JOBS){ L.jobs.push(blankJob()); scheduleSave(); render(); }
@@ -852,11 +903,9 @@ async function copyFromYesterday(){
   try{ src=await Store.get(keyFor(prev)); }
   catch(err){ alert('Could not reach the board server to load '+fmtDateLong(prev)); return; }
   if(!src){ alert('No board found for '+fmtDateLong(prev)); return; }
-  // Copy the setup as a starting point. A change-over is a one-day event — once
-  // it's done the line is running that size, so roll CO forward to Run 1st.
-  board = normalizeBoard(JSON.parse(JSON.stringify(src)));
+  // Copy the setup as a starting point: roll CO→Run 1st and carry order remainders.
+  board = seedFromBoard(src);
   board.date=curDate;
-  board.lines.forEach(l=>{ if(l.status==='co') l.status='run1'; });
   scheduleSave(); render();
 }
 
