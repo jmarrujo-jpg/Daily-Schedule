@@ -52,12 +52,12 @@
 
   /* ---------- Board (TV) view ---------- */
   main{flex:1;padding:16px 18px 8px}
-  /* Board is a fixed 2×2 status map: Run 1st TL · Back Up TR · Run 2nd BL · Change Over BR. */
-  .board-quad{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
-  .board-extra{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-top:14px}
-  .quad{display:flex;flex-direction:column;min-width:0}
-  .quad-cards{display:flex;flex-direction:column;gap:12px}
-  .quad-empty{border:1px dashed var(--edge);border-radius:9px;min-height:64px;opacity:.5}
+  /* Board tiles flow into a grid whose column count adapts to how many are shown
+     (set inline per render), ordered by status. Tiles stretch to fill their cell. */
+  .board-grid{display:grid;gap:14px;align-content:start}
+  .board-grid .line-card{min-width:0}
+  .board-empty{color:var(--dim);font-family:var(--disp);font-weight:600;font-size:18px;
+    letter-spacing:.04em;padding:40px;text-align:center}
   @media(min-width:1500px){.layout{display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start}}
 
   .line-card{background:var(--panel);border:1px solid var(--edge);border-top:5px solid var(--edge2);
@@ -118,10 +118,13 @@
   .rail li{font-size:17px;font-weight:600;font-family:var(--disp);letter-spacing:.01em}
   .rail .none{color:var(--dim);font-size:14px;font-weight:500}
   .rail .panel.ppress h3{color:var(--green)}
-  .rail .press-list li{display:flex;align-items:baseline;gap:8px}
+  .rail .press-list li{display:flex;flex-direction:column;gap:1px}
+  .rail .press-top{display:flex;align-items:baseline;gap:8px}
   .rail .press-no{flex:0 0 auto;min-width:74px;font-size:13px;font-weight:800;letter-spacing:.08em;
     text-transform:uppercase;color:var(--muted)}
   .rail .press-op{flex:1 1 auto;font-size:17px;font-weight:600}
+  .rail .press-detail{font-family:var(--disp);font-weight:600;font-size:13px;color:var(--amber);
+    letter-spacing:.02em;padding-left:82px}
 
   /* status legend */
   .legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:10px 2px 2px}
@@ -135,7 +138,7 @@
 
   /* ---------- Edit view ---------- */
   .edit-wrap{display:flex;flex-direction:column;gap:16px}
-  .edit-lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+  .edit-lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
   .ecard{background:var(--panel);border:1px solid var(--edge);border-top-width:4px;border-radius:8px;padding:14px}
   .ecard .eh{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--edge)}
   .ecard .eh .lc-no{font-size:14px}
@@ -170,7 +173,12 @@
   .pressrow .press-unit{flex:0 0 140px;background:var(--panel2);color:var(--text);
     border:1px solid var(--edge2);border-radius:5px;padding:8px 9px;font-size:15px;
     font-family:var(--disp);font-weight:700;letter-spacing:.03em}
-  .pressrow .names{flex:1 1 200px;margin:0}
+  .pressrow .names{flex:1 1 160px;margin:0}
+  .pressrow .press-end,.pressrow .press-mode,.pressrow .press-qty{background:var(--panel2);color:var(--text);
+    border:1px solid var(--edge2);border-radius:5px;padding:8px 9px;font-size:15px}
+  .pressrow .press-end{flex:0 0 90px}
+  .pressrow .press-mode{flex:0 0 150px;font-family:var(--disp);font-weight:600}
+  .pressrow .press-qty{flex:0 0 70px;font-family:var(--mono)}
   .pressrow .pressrm{flex:0 0 auto;padding:6px 10px}
   .subhead{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
     color:var(--muted);margin:8px 0 4px}
@@ -222,7 +230,7 @@
   /* fullscreen tweaks */
   body.fs .topbar .hide-fs{display:none}
   .foot-note{text-align:center;color:var(--dim);font-size:11px;padding:6px 0 12px;font-family:var(--mono)}
-  @media(max-width:900px){.board-quad,.board-extra{grid-template-columns:1fr}.layout{display:block}.rail{margin-top:14px}}
+  @media(max-width:900px){.board-grid{grid-template-columns:1fr !important}.layout{display:block}.rail{margin-top:14px}}
 
   /* print: two options — color (screen look) and white (writable). Both fit
      one landscape sheet and carry a centered title header with the date. */
@@ -239,11 +247,9 @@
     .print-title{display:block;text-align:center;font-family:var(--disp);font-weight:800;
       font-size:19px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
       margin:0 0 9px;padding-bottom:7px;border-bottom:2px solid var(--edge2)}
-    /* keep the on-screen 2×2 zone map + side rail; the mobile 1-col rule must not win */
+    /* keep the on-screen adaptive board + side rail; the mobile 1-col rule must not win */
     .layout{display:grid !important;grid-template-columns:1fr 210px !important;gap:9px !important;align-items:start}
-    .board-quad,.board-extra{display:grid !important;grid-template-columns:1fr 1fr !important;gap:9px !important}
-    .board-extra{margin-top:9px !important}
-    .quad-cards{gap:9px}
+    .board-grid{gap:9px !important}
     .line-card,.panel{break-inside:avoid;box-shadow:none !important}
     .line-card{padding:8px 10px;gap:5px}
     .status-pill{font-size:14px !important;padding:3px 9px !important}
@@ -267,8 +273,7 @@
     /* WHITE option: light, ink-friendly background you can write on */
     body.print-light{background:#fff !important;color:#111 !important}
     body.print-light .print-title{color:#111 !important;border-bottom-color:#999 !important}
-    body.print-light .line-card,body.print-light .panel,body.print-light .quad-empty{background:#fff !important;border:1px solid #b7b7b7 !important}
-    body.print-light .quad-empty{border-style:dashed !important}
+    body.print-light .line-card,body.print-light .panel{background:#fff !important;border:1px solid #b7b7b7 !important}
     body.print-light .lc-no{background:#111 !important;color:#fff !important}
     body.print-light .lc-size,body.print-light .job-cust,body.print-light .job-meta b,
       body.print-light .op .who .n1,body.print-light .rail li{color:#111 !important}
@@ -326,7 +331,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v25';
+var APP_VERSION = 'v26';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -442,23 +447,25 @@ function commas(n){ return n==null||n===''?'':Number(n).toLocaleString('en-US');
 function blankJob(){ return { code:"", cust:"", ends:"", order:"", made:"", pallet:[] }; }
 /* Press Department: a list of running presses. Each row picks a press unit and
    one or more operators — [{u:"13", ops:["Andy"]}, …]. Add a row per press. */
-function blankPressRow(){ return { u:"", ops:[""] }; }
+function blankPressRow(){ return { u:"", ops:[""], end:"", mode:"", qty:"" }; }
 function normalizePresses(sp){
   const out=[];
   if(Array.isArray(sp)){
     sp.forEach(e=>{
       const u=String(e&&e.u!=null?e.u:'');
       const ops=(Array.isArray(e&&e.ops)?e.ops:[]).map(x=>String(x==null?'':x)).slice(0,MAX_PER_POS);
-      if(u || ops.some(x=>x.trim())) out.push({u, ops:ops.length?ops:[""]});
+      const end=String(e&&e.end!=null?e.end:''), mode=String(e&&e.mode!=null?e.mode:''), qty=String(e&&e.qty!=null?e.qty:'');
+      if(u || ops.some(x=>x.trim())) out.push({u, ops:ops.length?ops:[""], end, mode, qty});
     });
   }else if(sp && typeof sp==='object'){          // migrate old object model {u:[names]}
     PRESS_UNITS.forEach(u=>{
       const ops=(Array.isArray(sp[u])?sp[u]:[]).map(x=>String(x==null?'':x)).filter(Boolean);
-      if(ops.length) out.push({u, ops});
+      if(ops.length) out.push({u, ops, end:"", mode:"", qty:""});
     });
   }
   return out;
 }
+const PRESS_MODES = ["","Open","Shipping","Both"];
 function blankLine(lineNo){
   return { lineNo:String(lineNo), status:"", size:"", desc:"", po:"", hidden:false,
     ops:{bodymaker:[""],doubleSeamer:[""],palletizer:[""],frameStraps:[""],forklift:[""]},
@@ -753,32 +760,25 @@ function cardHTML(l){
     <div class="ops">${ops}</div>
   </div>`;
 }
+/* Board order: running lines first (Run 1st, Run 2nd, Back Up, RWR, CO), idle last. */
+const BOARD_PRIO = {run1:0, run2:1, backup:2, rwr:3, co:4, "":5};
 function renderBoard(){
-  // Hidden lines never show on the board. Group the rest by status.
-  const byStatus={};
-  board.lines.filter(l=>!l.hidden).forEach(l=>{ const st=statusOf(l); (byStatus[st]||(byStatus[st]=[])).push(l); });
-  const idlePool=(byStatus['']||[]).slice();   // idle tiles, used to fill empty zones
-  function zone(k){
-    let ls=byStatus[k]||[];
-    if(!ls.length && idlePool.length) ls=[idlePool.shift()];   // empty zone → drop in an idle tile
-    const inner = ls.length ? ls.map(cardHTML).join('') : `<div class="quad-empty"></div>`;
-    return `<div class="quad"><div class="quad-cards">${inner}</div></div>`;
-  }
-  // Fixed 2×2 map: Run 1st TL · Back Up TR · Run 2nd BL · Change Over BR.
-  const mainQuads=["run1","backup","run2","co"].map(zone).join('');
-  // RWR lines plus any idle tiles that didn't fit a zone show below.
-  const extrasLines=(byStatus['rwr']||[]).concat(idlePool);
-  const extras=extrasLines.length
-    ? `<div class="board-extra">${extrasLines.map(l=>`<div class="quad"><div class="quad-cards">${cardHTML(l)}</div></div>`).join('')}</div>`
-    : '';
-  const boardMain=`<div class="board-quad">${mainQuads}</div>${extras}`;
+  // Hidden lines never show. Sort the rest by status priority.
+  const cards = board.lines.filter(l=>!l.hidden)
+    .slice().sort((a,b)=> (BOARD_PRIO[statusOf(a)] ?? 9) - (BOARD_PRIO[statusOf(b)] ?? 9));
+  const n = cards.length;
+  // Tiles resize to fill: 1 wide, 2 side-by-side, 3 across, 4 as 2×2, then 3-up.
+  const cols = n<=1?1 : n===2?2 : n===3?3 : n===4?2 : n<=6?3 : 4;
+  const cardsHTML = n ? cards.map(cardHTML).join('')
+    : `<div class="board-empty">No lines scheduled for today</div>`;
+  const boardMain = `<div class="board-grid" data-n="${n}" style="grid-template-columns:repeat(${cols},minmax(0,1fr))">${cardsHTML}</div>`;
 
-  const railPeople = STAFF_PEOPLE.map(([k,label,accent])=>{
+  const staffPanel = (k,label,accent)=>{
     const items=(board.staff[k]||[]).map(s=>String(s||'').trim()).filter(Boolean);
     return `<div class="panel ${accent}"><h3>${label}</h3>
       ${items.length?`<ul>${items.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:`<div class="none">— none —</div>`}
     </div>`;
-  }).join('');
+  };
   const railText = STAFF_TEXT.map(([k,label])=>{
     const items=(board.staff[k]||'').split('\n').map(s=>s.trim()).filter(Boolean);
     return `<div class="panel"><h3>${label}</h3>
@@ -788,7 +788,13 @@ function renderBoard(){
   const pressRows = (board.staff.presses||[]).map(row=>{
     const names = (row.ops||[]).map(s=>String(s||'').trim()).filter(Boolean);
     if(!row.u || !names.length) return '';
-    return `<li><span class="press-no">Press ${esc(row.u)}</span><span class="press-op">${names.map(esc).join(', ')}</span></li>`;
+    const bits=[];
+    if(row.end)  bits.push('End '+esc(row.end));
+    if(row.mode) bits.push(esc(row.mode));
+    if(row.qty)  bits.push(esc(row.qty));
+    const detail = bits.length ? `<span class="press-detail">${bits.join(' · ')}</span>` : '';
+    return `<li><div class="press-top"><span class="press-no">Press ${esc(row.u)}</span>
+      <span class="press-op">${names.map(esc).join(', ')}</span></div>${detail}</li>`;
   }).filter(Boolean).join('');
   const railPresses = `<div class="panel ppress"><h3>Press Department</h3>
     ${pressRows?`<ul class="press-list">${pressRows}</ul>`:`<div class="none">— none —</div>`}
@@ -801,7 +807,7 @@ function renderBoard(){
     <div id="conflictBox">${conflictBannerHTML()}</div>
     <div class="layout">
       <div class="board-main">${boardMain}</div>
-      <div class="rail">${railPeople}${railPresses}${railText}</div>
+      <div class="rail">${railPresses}${staffPanel('vacation','Vacation','pvac')}${staffPanel('absent','Absent','pab')}${staffPanel('custodian','Custodian','pcust')}${railText}</div>
     </div>
     <div class="legend">${legend}</div>
     <div class="safety">Have a Safe &amp; Productive Day!</div>`;
@@ -854,9 +860,13 @@ function pressEditRows(){
     const nameSels=ops.map((n,i)=>
       `<select class="${i>0?'trainee':''}${conflictClass(n)}" data-pressrow="${ri}" data-i="${i}">${nameOptions(n)}</select>`).join('');
     const addPerson = ops.length<MAX_PER_POS ? `<button class="addname" data-addpressperson="${ri}">＋ person</button>`:'';
+    const modeOpts = PRESS_MODES.map(m=>`<option value="${m}" ${m===(row.mode||'')?'selected':''}>${m||'— open/shipping —'}</option>`).join('');
     return `<div class="pressrow">
       <select class="press-unit" data-pressunit="${ri}">${pressUnitOptions(row.u)}</select>
       <div class="names">${nameSels}${addPerson}</div>
+      <input class="press-end" data-prow="${ri}" data-pf="end" value="${esc(row.end||'')}" placeholder="End">
+      <select class="press-mode" data-prow="${ri}" data-pf="mode">${modeOpts}</select>
+      <input class="press-qty mono" data-prow="${ri}" data-pf="qty" value="${esc(row.qty||'')}" placeholder="Qty" inputmode="numeric">
       <button class="rm pressrm" data-rmpressrow="${ri}" title="Remove this press">✕</button>
     </div>`;
   }).join('');
@@ -1034,6 +1044,11 @@ document.getElementById('view').addEventListener('input', e=>{
   if(t.dataset.pressunit!==undefined){                          // which press this row is
     const row=board.staff.presses[+t.dataset.pressunit];
     if(row){ row.u=t.value; scheduleSave(); }
+    return;
+  }
+  if(t.dataset.prow!==undefined && t.dataset.pf){               // press end / mode / qty
+    const row=board.staff.presses[+t.dataset.prow];
+    if(row){ row[t.dataset.pf]=t.value; scheduleSave(); }
     return;
   }
   if(t.dataset.pressrow!==undefined && t.dataset.i!==undefined){ // press operator name
