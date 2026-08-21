@@ -231,9 +231,9 @@
     @page{size:landscape;margin:0}   /* we control the inset ourselves via body padding */
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
     html,body{background:var(--bg) !important;color:var(--text) !important}
-    /* ~0.5in of guaranteed whitespace on every side (title + board), well clear
-       of any printer dead zone — body padding can't be overridden like @page can */
-    body{padding:0.5in !important}
+    /* 0.25in of guaranteed whitespace on every side (title + board), clear of the
+       printer dead zone — body padding can't be overridden like @page can */
+    body{padding:0.25in !important}
     .topbar,.foot-note,#conflictBox{display:none !important}
     main{padding:0 !important}
     .print-title{display:block;text-align:center;font-family:var(--disp);font-weight:800;
@@ -326,7 +326,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v23';
+var APP_VERSION = 'v24';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
