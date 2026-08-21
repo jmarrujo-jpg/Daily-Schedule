@@ -212,19 +212,39 @@
   .foot-note{text-align:center;color:var(--dim);font-size:11px;padding:6px 0 12px;font-family:var(--mono)}
   @media(max-width:900px){.board-quad,.board-extra{grid-template-columns:1fr}.layout{display:block}.rail{margin-top:14px}}
 
-  /* print: reproduce the on-screen board exactly (dark theme, same layout) */
+  /* print: reproduce the on-screen dark board, tuned to fit one landscape sheet
+     (no zoom — that overflowed the page edges; instead size the pieces to fit) */
   .print-title{display:none}
   @media print{
     @page{size:landscape;margin:8mm}
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
     html,body{background:var(--bg) !important;color:var(--text) !important}
-    .topbar,.foot-note{display:none !important}
-    main{padding:0 !important;zoom:.72}   /* scale the whole board to fit one landscape sheet */
+    .topbar,.foot-note,#conflictBox{display:none !important}
+    main{padding:0 !important}
     /* keep the on-screen 2×2 zone map + side rail; the mobile 1-col rule must not win */
-    .layout{display:grid !important;grid-template-columns:1fr 320px !important;gap:14px !important;align-items:start}
-    .board-quad,.board-extra{display:grid !important;grid-template-columns:1fr 1fr !important;gap:14px !important}
-    .line-card,.panel{break-inside:avoid}
+    .layout{display:grid !important;grid-template-columns:1fr 240px !important;gap:10px !important;align-items:start}
+    .board-quad,.board-extra{display:grid !important;grid-template-columns:1fr 1fr !important;gap:10px !important}
+    .board-extra{margin-top:10px !important}
+    .quad-cards{gap:10px}
+    .line-card,.panel{break-inside:avoid;box-shadow:none !important}
+    .line-card{padding:9px 11px;gap:6px}
+    .status-pill{font-size:15px !important;padding:4px 10px !important}
     .status-pill.co{animation:none !important}
+    .lc-size{font-size:29px !important}
+    .lc-no{font-size:12px;padding:2px 8px;margin-top:2px}
+    .job-cust{font-size:17px !important}
+    .job{padding:5px 0}
+    .op{padding:2px 0}
+    .op .role{font-size:10px !important}
+    .op .who .n1{font-size:14px !important}
+    .op .who .nx{font-size:11px !important}
+    .ops{gap:3px 14px !important;padding-top:6px}
+    .rail li{font-size:14px}
+    .rail h3{font-size:13px}
+    .rail .panel{padding:8px 10px}
+    .setup{padding-top:6px}
+    .legend{margin-top:8px}
+    .safety{font-size:16px;padding:8px}
   }
 </style>
 </head>
@@ -266,7 +286,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v17';
+var APP_VERSION = 'v18';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
