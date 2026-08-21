@@ -190,6 +190,13 @@
   .savechip.error{color:var(--red)}
   .savechip.error .dot{background:var(--red)}
 
+  /* scheduling-conflict warning (edit screen) */
+  .conflicts{background:rgba(239,68,68,.1);border:1px solid var(--red);border-radius:8px;padding:12px 15px}
+  .conflicts-h{font-family:var(--disp);font-weight:800;font-size:15px;letter-spacing:.04em;color:var(--red);margin-bottom:6px}
+  .conflicts ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+  .conflicts li{font-size:15px;color:var(--text);line-height:1.35}
+  .conflicts li b{font-family:var(--disp);font-weight:700}
+
   /* roster manager */
   .roster{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
   .chip{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--edge2);
@@ -270,7 +277,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v14';
+var APP_VERSION = 'v15';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -532,6 +539,45 @@ async function saveRoster(){
 }
 
 /* ============================ Helpers ============================ */
+/* Find people scheduled in conflicting spots — working while marked
+   absent/vacation, double-booked across positions, or absent AND on vacation.
+   Hidden lines are ignored (they're not on the board). */
+function collectConflicts(){
+  const people={};
+  function add(raw, label, kind){
+    const k=String(raw||'').trim().toLowerCase(); if(!k) return;
+    const p=people[k]||(people[k]={name:String(raw).trim(), locs:[]});
+    if(!p.locs.some(x=>x.label===label && x.kind===kind)) p.locs.push({label,kind});
+  }
+  board.lines.forEach(l=>{
+    if(l.hidden) return;
+    OP_ROLES.forEach(([key,label])=> opArr(l,key).forEach(n=> add(n,'Line '+(l.lineNo||'?')+' · '+label,'work')));
+  });
+  const pr=board.staff.presses||{};
+  PRESS_UNITS.forEach(u=> pressArr(pr,u).forEach(n=> add(n,'Press '+u,'work')));
+  (board.staff.custodian||[]).forEach(n=> add(n,'Custodian','work'));
+  (board.staff.absent||[]).forEach(n=> add(n,'Absent','absent'));
+  (board.staff.vacation||[]).forEach(n=> add(n,'Vacation','vacation'));
+
+  const out=[];
+  Object.keys(people).forEach(k=>{
+    const p=people[k];
+    const work=p.locs.filter(x=>x.kind==='work');
+    const absent=p.locs.some(x=>x.kind==='absent');
+    const vac=p.locs.some(x=>x.kind==='vacation');
+    if(work.length && (absent||vac)){
+      const off=[absent?'Absent':null, vac?'Vacation':null].filter(Boolean).join(' & ');
+      out.push({name:p.name, msg:'is marked '+off+' but is also assigned to '+work.map(w=>w.label).join(', ')});
+    }
+    if(work.length>=2){
+      out.push({name:p.name, msg:'is booked in '+work.length+' spots at once — '+work.map(w=>w.label).join(', ')});
+    }
+    if(absent && vac){
+      out.push({name:p.name, msg:'is listed as both Absent and on Vacation'});
+    }
+  });
+  return out;
+}
 function changeoverCount(){ return board.lines.filter(l=>l.status==='co').length; }
 function updateCoChip(){
   const n = changeoverCount(), el=document.getElementById('coChip');
@@ -780,6 +826,13 @@ function renderEdit(){
   const pressFields = PRESS_UNITS.map(u=>`
     <div class="fld"><label>Press ${esc(u)}</label>${pressInputs(u)}</div>`).join('');
 
+  const conflicts = collectConflicts();
+  const conflictHTML = conflicts.length ? `
+    <div class="conflicts">
+      <div class="conflicts-h">⚠ ${conflicts.length} scheduling conflict${conflicts.length>1?'s':''}</div>
+      <ul>${conflicts.map(c=>`<li><b>${esc(c.name)}</b> ${esc(c.msg)}</li>`).join('')}</ul>
+    </div>` : '';
+
   document.getElementById('view').innerHTML = `
     <div class="edit-wrap">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
@@ -788,6 +841,7 @@ function renderEdit(){
         <button class="btn" id="copyPrev">Start from yesterday</button>
         <button class="btn" id="clearDay">Clear this day</button>
       </div>
+      ${conflictHTML}
       <div class="ecard" style="border-top-color:var(--edge)">
         <div class="subhead">People / Roster <span class="hint">(these names fill every dropdown — one shared list for all days)</span></div>
         <div class="roster">${rosterChips}</div>
