@@ -28,7 +28,8 @@
   .topbar{display:flex;align-items:center;gap:16px;padding:10px 18px;
     background:linear-gradient(180deg,#141b24,#0f151c);border-bottom:2px solid var(--edge);
     position:sticky;top:0;z-index:30;flex-wrap:wrap}
-  .brand{display:flex;align-items:center;gap:14px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand-logo{height:38px;width:auto;background:#fff;border-radius:7px;padding:3px 5px}
   .brand h1{font-family:var(--disp);font-weight:700;font-size:26px;letter-spacing:.06em;text-transform:uppercase}
   .cochip{font-family:var(--disp);font-weight:700;font-size:15px;letter-spacing:.1em;text-transform:uppercase;
     padding:4px 11px;border-radius:5px;white-space:nowrap}
@@ -248,9 +249,10 @@
     body{padding:0.25in !important}
     .topbar,.foot-note,#conflictBox{display:none !important}
     main{padding:0 !important}
-    .print-title{display:block;text-align:center;font-family:var(--disp);font-weight:800;
-      font-size:19px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
+    .print-title{display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--disp);
+      font-weight:800;font-size:19px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
       margin:0 0 9px;padding-bottom:7px;border-bottom:2px solid var(--edge2)}
+    .print-logo{height:30px;width:auto;background:#fff;border-radius:5px;padding:2px 4px}
     /* keep the on-screen adaptive board + side rail; the mobile 1-col rule must not win */
     .layout{display:grid !important;grid-template-columns:1fr 210px !important;gap:9px !important;align-items:start}
     .board-grid{gap:9px !important}
@@ -299,6 +301,7 @@
 <body>
   <div class="topbar">
     <div class="brand">
+      <img class="brand-logo" src="csc-logo.png" alt="CSC">
       <h1>Daily Line Schedule</h1>
       <span class="cochip none" id="coChip">—</span>
     </div>
@@ -335,7 +338,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v28';
+var APP_VERSION = 'v29';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -703,7 +706,7 @@ function render(){
   document.getElementById('dateLabel').textContent = fmtDateLong(curDate);
   document.getElementById('datePick').value = curDate;
   const pt=document.getElementById('printTitle');
-  if(pt) pt.textContent = 'Daily Line Schedule — '+fmtDateLong(curDate);
+  if(pt) pt.innerHTML = '<img class="print-logo" src="csc-logo.png" alt="CSC"> Daily Line Schedule — '+fmtDateLong(curDate);
   document.getElementById('mBoard').classList.toggle('on',mode==="board");
   document.getElementById('mEdit').classList.toggle('on',mode==="edit");
   updateCoChip();
