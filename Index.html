@@ -140,7 +140,7 @@
   .edit-wrap{display:flex;flex-direction:column;gap:16px}
   .edit-lines{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
   .ecard{background:var(--panel);border:1px solid var(--edge);border-top-width:4px;border-radius:8px;padding:14px}
-  .ecard .eh{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--edge)}
+  .ecard .eh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;row-gap:6px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--edge)}
   .ecard .eh .lc-no{font-size:14px}
   .ecard .eh input.lineno{width:52px}
   .fld{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
@@ -157,8 +157,9 @@
   .addname{align-self:flex-start;background:transparent;border:1px dashed var(--edge2);color:var(--muted);
     border-radius:5px;padding:5px 10px;font-size:12px;font-weight:600;letter-spacing:.02em}
   .addname:hover{color:var(--amber);border-color:var(--amber-d)}
-  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end}
+  .row2 .fld,.row3 .fld{margin-bottom:0}
   .ops-edit{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .pallet-pick{display:flex;flex-wrap:wrap;gap:8px}
   .palchip{font-family:var(--disp);font-weight:700;font-size:14px;letter-spacing:.02em;cursor:pointer;
@@ -169,17 +170,17 @@
   select.conflict{border:2px solid var(--red) !important;background:rgba(239,68,68,.16) !important}
   /* press department rows */
   .pressrows{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
-  .pressrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .pressrow .press-unit{flex:0 0 140px;background:var(--panel2);color:var(--text);
-    border:1px solid var(--edge2);border-radius:5px;padding:8px 9px;font-size:15px;
-    font-family:var(--disp);font-weight:700;letter-spacing:.03em}
-  .pressrow .names{flex:1 1 160px;margin:0}
-  .pressrow .press-end,.pressrow .press-mode,.pressrow .press-qty{background:var(--panel2);color:var(--text);
-    border:1px solid var(--edge2);border-radius:5px;padding:8px 9px;font-size:15px}
-  .pressrow .press-end{flex:0 0 90px}
-  .pressrow .press-mode{flex:0 0 150px;font-family:var(--disp);font-weight:600}
-  .pressrow .press-qty{flex:0 0 70px;font-family:var(--mono)}
-  .pressrow .pressrm{flex:0 0 auto;padding:6px 10px}
+  /* fixed columns: press | operator(grows) | end | type | qty | remove */
+  .pressrow{display:grid;grid-template-columns:128px minmax(120px,1fr) 76px 118px 60px 30px;
+    gap:8px;align-items:start}
+  .pressrow .names{margin:0;min-width:0}
+  .pressrow .press-unit,.pressrow .press-end,.pressrow .press-mode,.pressrow .press-qty{
+    background:var(--panel2);color:var(--text);border:1px solid var(--edge2);border-radius:5px;
+    padding:8px 9px;font-size:15px;width:100%}
+  .pressrow .press-unit{font-family:var(--disp);font-weight:700;letter-spacing:.03em}
+  .pressrow .press-mode{font-family:var(--disp);font-weight:600}
+  .pressrow .press-qty{font-family:var(--mono)}
+  .pressrow .pressrm{padding:8px 6px}
   .subhead{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
     color:var(--muted);margin:8px 0 4px}
   .jobedit{border:1px solid var(--edge);border-radius:6px;padding:10px;margin-bottom:8px;background:#131a22}
@@ -331,7 +332,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v26';
+var APP_VERSION = 'v27';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -955,9 +956,6 @@ function renderEdit(){
         <button class="btn" id="clearDay">Clear this day</button>
       </div>
       <div id="conflictBox">${conflictBannerHTML()}</div>
-      <div class="edit-lines">${lineCards}
-        <button class="addline" id="addLine">+ Add line</button>
-      </div>
       <div class="staff-row">
         <div class="ecard" style="border-top-color:var(--edge)">
           <div class="subhead">Press Department <span class="hint">(pick a press &amp; its operator — ＋ person for a trainee, ＋ add press for another)</span></div>
@@ -968,6 +966,9 @@ function renderEdit(){
           <div class="subhead">Absent, vacation &amp; support crew</div>
           <div class="edit-staff">${staffPeople}${staffText}</div>
         </div>
+      </div>
+      <div class="edit-lines">${lineCards}
+        <button class="addline" id="addLine">+ Add line</button>
       </div>
       <div class="ecard" style="border-top-color:var(--edge)">
         <div class="subhead">People / Roster <span class="hint">(these names fill every dropdown — one shared list for all days)</span></div>
