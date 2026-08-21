@@ -52,7 +52,15 @@
 
   /* ---------- Board (TV) view ---------- */
   main{flex:1;padding:16px 18px 8px}
-  .board-grid{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:14px}
+  /* Board is a fixed 2×2 status map: Run 1st TL · Back Up TR · Run 2nd BL · Change Over BR. */
+  .board-quad{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+  .board-extra{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-top:14px}
+  .quad{display:flex;flex-direction:column;gap:9px;min-width:0}
+  .quad-h{font-family:var(--disp);font-weight:800;font-size:13px;letter-spacing:.14em;text-transform:uppercase;
+    padding-bottom:5px;border-bottom:2px solid currentColor;opacity:.9}
+  .quad-cards{display:flex;flex-direction:column;gap:12px}
+  .quad-empty{border:1px dashed var(--edge);border-radius:9px;padding:20px;text-align:center;color:var(--dim);
+    font-family:var(--disp);font-weight:600;font-size:14px;letter-spacing:.05em}
   @media(min-width:1500px){.layout{display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start}}
 
   .line-card{background:var(--panel);border:1px solid var(--edge);border-top:5px solid var(--edge2);
@@ -63,6 +71,14 @@
   .lc-no{font-family:var(--disp);font-weight:700;font-size:16px;letter-spacing:.08em;color:#0d1117;
     background:var(--text);border-radius:5px;padding:3px 11px;text-transform:uppercase;flex:none;margin-top:4px}
   .lc-headtxt{flex:1;min-width:0}
+  .lc-po{flex:none;align-self:flex-start;font-family:var(--mono);font-weight:700;font-size:15px;color:var(--text);
+    background:var(--edge-soft,rgba(255,255,255,.05));border:1px solid var(--edge);border-radius:6px;padding:4px 10px;white-space:nowrap}
+  .lc-po .lbl{font-family:var(--disp);font-size:10px;letter-spacing:.1em;color:var(--muted);margin-right:5px}
+  /* pallet set-up chips */
+  .setup{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding-top:8px;border-top:1px solid var(--edge)}
+  .setup-lbl{font-family:var(--disp);font-weight:700;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-right:2px}
+  .pal{font-family:var(--disp);font-weight:700;font-size:12.5px;letter-spacing:.02em;color:var(--blue);
+    background:rgba(58,160,255,.1);border:1px solid rgba(58,160,255,.35);border-radius:5px;padding:3px 9px}
   .lc-row1{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   .status-pill{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:.06em;text-transform:uppercase;
     border-radius:7px;padding:6px 15px;line-height:1;white-space:nowrap;flex:none}
@@ -144,6 +160,11 @@
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
   .ops-edit{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pallet-pick{display:flex;flex-wrap:wrap;gap:8px}
+  .palchip{font-family:var(--disp);font-weight:700;font-size:14px;letter-spacing:.02em;cursor:pointer;
+    background:var(--panel2);color:var(--muted);border:1px solid var(--edge2);border-radius:7px;padding:8px 13px}
+  .palchip:hover{border-color:var(--blue);color:var(--text)}
+  .palchip.on{background:rgba(58,160,255,.16);border-color:var(--blue);color:var(--blue)}
   .subhead{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
     color:var(--muted);margin:8px 0 4px}
   .jobedit{border:1px solid var(--edge);border-radius:6px;padding:10px;margin-bottom:8px;background:#131a22}
@@ -178,7 +199,7 @@
   /* fullscreen tweaks */
   body.fs .topbar .hide-fs{display:none}
   .foot-note{text-align:center;color:var(--dim);font-size:11px;padding:6px 0 12px;font-family:var(--mono)}
-  @media(max-width:900px){.board-grid{grid-template-columns:1fr}.layout{display:block}.rail{margin-top:14px}}
+  @media(max-width:900px){.board-quad,.board-extra{grid-template-columns:1fr}.layout{display:block}.rail{margin-top:14px}}
 </style>
 </head>
 <body>
@@ -217,7 +238,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v9';
+var APP_VERSION = 'v10';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -272,6 +293,8 @@ const STAFF_PEOPLE = [["absent","Absent","pab"], ["vacation","Vacation","pvac"],
 const STAFF_TEXT   = [];
 /* Press / Litho units — each gets its own operator dropdown (roster names, up to MAX_PER_POS). */
 const PRESS_UNITS = ["13","15","16","17","18","19","20","3","2-SS","3-SS"];
+/* Pallet set-up options — a line can carry any mix of these. */
+const PALLET_OPTS = ["2 Straps","4 Straps","Cover Caps","Plastic Frames","Wood Frame","Plastic Pallet","Wood Pallet"];
 
 /* ============================ Storage layer ============================
    When API_URL is set, reads/writes go to the Cloudflare Worker (KV-backed) so
@@ -330,7 +353,7 @@ function pressArr(p,u){
   return v.map(s=>String(s==null?'':s)).slice(0,MAX_PER_POS);
 }
 function blankLine(lineNo){
-  return { lineNo:String(lineNo), status:"", size:"", desc:"",
+  return { lineNo:String(lineNo), status:"", size:"", desc:"", po:"", pallet:[],
     ops:{bodymaker:[""],doubleSeamer:[""],palletizer:[""],frameStraps:[""],forklift:[""]},
     jobs:[ blankJob() ] };
 }
@@ -365,6 +388,9 @@ function normalizeLine(l){
     if(l.ends2) l.jobs.push({ code:'', cust:'', ends:String(l.ends2), order:'', made:'' });
   }
   for(const k in b) if(k!=='ops' && k!=='jobs' && l[k]===undefined) l[k]=b[k];
+  l.po = String(l.po==null?'':l.po);
+  l.pallet = Array.isArray(l.pallet) ? l.pallet.map(x=>String(x==null?'':x)).filter(Boolean)
+           : (typeof l.pallet==='string' && l.pallet.trim() ? [l.pallet.trim()] : []);
   if(l.status===undefined || l.status===null){     // migrate legacy changeover flag
     l.status = l.changeover ? 'co' : (l.size ? 'run1' : '');
   }
@@ -471,43 +497,65 @@ function orderInline(j){
   const left=Math.max(o-m,0), done=m>=o;
   return `<span><span class="lbl">Order</span> <b>${commas(o)}</b> · ${done?'<span class="done">✓ complete</span>':(commas(m)+' made · '+commas(left)+' left')}</span>`;
 }
-function renderBoard(){
-  const cards = board.lines.map(l=>{
-    const st=statusOf(l), sd=STATUS[st];
-    const jobs = (l.jobs||[]).filter(j=>j.cust||j.code||j.ends||j.order);
-    const jobsHTML = jobs.map(j=>`
-      <div class="job">
-        <div class="job-head">
-          ${j.cust?`<span class="job-cust">${esc(j.cust)}</span>`:''}
-          ${j.code?`<span class="job-code">${esc(j.code)}</span>`:''}
-        </div>
-        <div class="job-meta">
-          ${j.ends?`<span><span class="lbl">Ends</span> <b>${esc(j.ends)}</b></span>`:''}
-          ${orderInline(j)}
-        </div>
-      </div>`).join('');
-    const ops = OP_ROLES.map(([k,label])=>{
-      const names = opArr(l,k).map(s=>s.trim()).filter(Boolean);
-      const who = names.length
-        ? `<span class="who"><span class="n1">${esc(names[0])}</span>${names.slice(1).map(n=>`<span class="nx">+ ${esc(n)}</span>`).join('')}</span>`
-        : `<span class="who empty">—</span>`;
-      return `<div class="op"><span class="role">${label}</span>${who}</div>`;
-    }).join('');
-    return `<div class="line-card${st===''?' idle':''}" style="border-top-color:${sd.color}">
-      <div class="lc-head">
-        <span class="lc-no">Line ${esc(l.lineNo)}</span>
-        <div class="lc-headtxt">
-          <div class="lc-row1">
-            <span class="status-pill${st==='co'?' co':''}" style="background:${sd.color};color:${sd.fg}">${sd.pill}</span>
-            <span class="lc-size">${esc(l.size)||'<span style="color:var(--dim)">—</span>'}</span>
-          </div>
-          ${l.desc?`<div class="lc-desc">${esc(l.desc)}</div>`:''}
-        </div>
+function cardHTML(l){
+  const st=statusOf(l), sd=STATUS[st];
+  const jobs = (l.jobs||[]).filter(j=>j.cust||j.code||j.ends||j.order);
+  const jobsHTML = jobs.map(j=>`
+    <div class="job">
+      <div class="job-head">
+        ${j.cust?`<span class="job-cust">${esc(j.cust)}</span>`:''}
+        ${j.code?`<span class="job-code">${esc(j.code)}</span>`:''}
       </div>
-      ${jobsHTML?`<div class="jobs">${jobsHTML}</div>`:''}
-      <div class="ops">${ops}</div>
-    </div>`;
+      <div class="job-meta">
+        ${j.ends?`<span><span class="lbl">Ends</span> <b>${esc(j.ends)}</b></span>`:''}
+        ${orderInline(j)}
+      </div>
+    </div>`).join('');
+  const ops = OP_ROLES.map(([k,label])=>{
+    const names = opArr(l,k).map(s=>s.trim()).filter(Boolean);
+    const who = names.length
+      ? `<span class="who"><span class="n1">${esc(names[0])}</span>${names.slice(1).map(n=>`<span class="nx">+ ${esc(n)}</span>`).join('')}</span>`
+      : `<span class="who empty">—</span>`;
+    return `<div class="op"><span class="role">${label}</span>${who}</div>`;
   }).join('');
+  const pallet=(l.pallet||[]).filter(Boolean);
+  const palHTML = pallet.length
+    ? `<div class="setup"><span class="setup-lbl">Set-up</span>${pallet.map(p=>`<span class="pal">${esc(p)}</span>`).join('')}</div>`
+    : '';
+  return `<div class="line-card${st===''?' idle':''}" style="border-top-color:${sd.color}">
+    <div class="lc-head">
+      <span class="lc-no">Line ${esc(l.lineNo)}</span>
+      <div class="lc-headtxt">
+        <div class="lc-row1">
+          <span class="status-pill${st==='co'?' co':''}" style="background:${sd.color};color:${sd.fg}">${sd.pill}</span>
+          <span class="lc-size">${esc(l.size)||'<span style="color:var(--dim)">—</span>'}</span>
+        </div>
+        ${l.desc?`<div class="lc-desc">${esc(l.desc)}</div>`:''}
+      </div>
+      ${l.po?`<span class="lc-po"><span class="lbl">PO</span> ${esc(l.po)}</span>`:''}
+    </div>
+    ${jobsHTML?`<div class="jobs">${jobsHTML}</div>`:''}
+    ${palHTML}
+    <div class="ops">${ops}</div>
+  </div>`;
+}
+function renderBoard(){
+  // Group lines by status so each falls into a fixed quadrant of the board.
+  const byStatus={};
+  board.lines.forEach(l=>{ const st=statusOf(l); (byStatus[st]||(byStatus[st]=[])).push(l); });
+  function quad(k,label){
+    const ls=byStatus[k]||[];
+    const inner = ls.length ? ls.map(cardHTML).join('') : `<div class="quad-empty">— no line —</div>`;
+    return `<div class="quad"><div class="quad-h" style="color:${STATUS[k].color}">${label}</div>
+      <div class="quad-cards">${inner}</div></div>`;
+  }
+  // Fixed 2×2 map: Run 1st TL · Back Up TR · Run 2nd BL · Change Over BR.
+  const mainQuads=[["run1","Run 1st"],["backup","Back Up"],["run2","Run 2nd"],["co","Change Over"]]
+    .map(([k,l])=>quad(k,l)).join('');
+  // RWR and idle lines only show when there are any, below the map.
+  const extras=[["rwr","RWR (Run When Ready)"],["","Idle / Not Running"]]
+    .filter(([k])=>(byStatus[k]||[]).length).map(([k,l])=>quad(k,l)).join('');
+  const boardMain=`<div class="board-quad">${mainQuads}</div>${extras?`<div class="board-extra">${extras}</div>`:''}`;
 
   const railPeople = STAFF_PEOPLE.map(([k,label,accent])=>{
     const items=(board.staff[k]||[]).map(s=>String(s||'').trim()).filter(Boolean);
@@ -536,7 +584,7 @@ function renderBoard(){
 
   document.getElementById('view').innerHTML = `
     <div class="layout">
-      <div class="board-grid">${cards}</div>
+      <div class="board-main">${boardMain}</div>
       <div class="rail">${railPeople}${railPresses}${railText}</div>
     </div>
     <div class="legend">${legend}</div>
@@ -588,6 +636,10 @@ function renderEdit(){
     const sd = STATUS[statusOf(l)];
     const opFields = OP_ROLES.map(([k,label])=>`
       <div class="fld"><label>${label}</label>${posInputs(l,idx,k)}</div>`).join('');
+    const palPick = PALLET_OPTS.map(opt=>{
+      const on=(l.pallet||[]).includes(opt);
+      return `<button class="palchip${on?' on':''}" data-line="${idx}" data-pallet="${esc(opt)}">${esc(opt)}</button>`;
+    }).join('');
     const jobFields = (l.jobs||[]).map((j,ji)=>`
       <div class="jobedit">
         <div class="jobedit-h"><span>Product ${ji+1}</span>${l.jobs.length>1?`<button data-rmjob="${idx}" data-ji="${ji}">remove</button>`:''}</div>
@@ -619,8 +671,12 @@ function renderEdit(){
         <div class="fld"><label>Can size</label>
           <select data-line="${idx}" data-f="size">${sizeOpts}</select></div>
       </div>
-      <div class="fld"><label>Note <span class="hint">(optional)</span></label>
-        <input value="${esc(l.desc)}" data-line="${idx}" data-f="desc" placeholder="anything the crew should know"></div>
+      <div class="row2">
+        <div class="fld"><label>PO # <span class="hint">(optional)</span></label>
+          <input value="${esc(l.po)}" data-line="${idx}" data-f="po" placeholder="e.g. 45123"></div>
+        <div class="fld"><label>Note <span class="hint">(optional)</span></label>
+          <input value="${esc(l.desc)}" data-line="${idx}" data-f="desc" placeholder="anything the crew should know"></div>
+      </div>
 
       <div class="subhead">Positions <span class="hint">(pick from the roster — add a 2nd for a trainee)</span></div>
       <div class="ops-edit">${opFields}</div>
@@ -628,6 +684,9 @@ function renderEdit(){
       <div class="subhead">Products <span class="hint">(same size, different customer = add another)</span></div>
       ${jobFields}
       ${l.jobs.length<MAX_JOBS?`<button class="addjob" data-addjob="${idx}">＋ add another product / customer</button>`:''}
+
+      <div class="subhead">Pallet set-up <span class="hint">(tap all that apply — mix &amp; match)</span></div>
+      <div class="pallet-pick">${palPick}</div>
     </div>`;
   }).join('');
 
@@ -772,6 +831,13 @@ document.getElementById('view').addEventListener('click', async e=>{
     if(!Array.isArray(board.staff.presses[u])) board.staff.presses[u]=[];
     if(board.staff.presses[u].length<MAX_PER_POS){ board.staff.presses[u].push(""); scheduleSave(); render(); }
   }
+  else if(t.dataset.pallet!==undefined){                         // toggle a pallet set-up option
+    const L=board.lines[+t.dataset.line], opt=t.dataset.pallet;
+    if(!Array.isArray(L.pallet)) L.pallet=[];
+    const i=L.pallet.indexOf(opt);
+    if(i>=0) L.pallet.splice(i,1); else L.pallet.push(opt);
+    scheduleSave(); render();
+  }
   else if(t.dataset.addjob!==undefined){                         // add a product/job to a line
     const i=+t.dataset.addjob, L=board.lines[i];
     if(L.jobs.length<MAX_JOBS){ L.jobs.push(blankJob()); scheduleSave(); render(); }
@@ -787,8 +853,7 @@ document.getElementById('view').addEventListener('click', async e=>{
   else if(t.id==='copyPrev'){ await copyFromYesterday(); }
 });
 async function copyFromYesterday(){
-  const [y,m,d]=curDate.split('-').map(Number);
-  const prev=todayStr(new Date(y,m-1,d-1));
+  const prev=shiftWorkday(curDate,-1);   // previous work-day (skips the weekend)
   let src;
   try{ src=await Store.get(keyFor(prev)); }
   catch(err){ alert('Could not reach the board server to load '+fmtDateLong(prev)); return; }
@@ -803,8 +868,16 @@ async function copyFromYesterday(){
 
 /* ============================ Nav / mode / fullscreen ============================ */
 async function goDate(date){ curDate=date; await loadBoard(date); render(); }
-document.getElementById('prevDay').onclick=()=>{ const[y,m,d]=curDate.split('-').map(Number); goDate(todayStr(new Date(y,m-1,d-1))); };
-document.getElementById('nextDay').onclick=()=>{ const[y,m,d]=curDate.split('-').map(Number); goDate(todayStr(new Date(y,m-1,d+1))); };
+/* Step one work-day in a direction, skipping Sat/Sun. */
+function shiftWorkday(dateStr, dir){
+  const [y,m,d]=dateStr.split('-').map(Number);
+  let dt=new Date(y,m-1,d);
+  do{ dt=new Date(dt.getFullYear(),dt.getMonth(),dt.getDate()+dir); }
+  while(dt.getDay()===0 || dt.getDay()===6);
+  return todayStr(dt);
+}
+document.getElementById('prevDay').onclick=()=>{ goDate(shiftWorkday(curDate,-1)); };
+document.getElementById('nextDay').onclick=()=>{ goDate(shiftWorkday(curDate,+1)); };
 document.getElementById('todayBtn').onclick=()=>goDate(todayStr());
 document.getElementById('datePick').onchange=e=>goDate(e.target.value);
 document.getElementById('mBoard').onclick=()=>{ mode='board'; render(); };
