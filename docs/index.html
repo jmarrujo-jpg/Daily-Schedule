@@ -96,6 +96,9 @@
   .job-meta b{color:var(--text);font-family:var(--mono);font-weight:600;font-size:15px}
   .job-meta .lbl{font-family:var(--disp);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
   .job-meta .done{color:var(--green);font-weight:700}
+  /* remaining ("Left") is the big number; order/made yesterday are small print */
+  .job-meta b{font-size:20px}
+  .job-meta .ord-sub{font-size:12px;color:var(--dim);font-weight:500}
 
   /* crew — each position holds up to 3 people (primary + up to 2 more, e.g. a trainee) */
   .ops{display:grid;grid-template-columns:1fr 1fr;gap:5px 20px;margin-top:2px;padding-top:8px;border-top:1px solid var(--edge)}
@@ -332,7 +335,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v27';
+var APP_VERSION = 'v28';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -440,6 +443,14 @@ function fmtDateLong(date){
 }
 function num(v){ const n=parseFloat(String(v).replace(/,/g,'')); return isFinite(n)?n:0; }
 function commas(n){ return n==null||n===''?'':Number(n).toLocaleString('en-US'); }
+/* Reformat a numeric input's value with thousands commas as you type (digits only). */
+function commaField(el){
+  const raw=(el.value||'').replace(/[^\d]/g,'');
+  const out=raw?Number(raw).toLocaleString('en-US'):'';
+  el.value=out;
+  try{ el.setSelectionRange(out.length,out.length); }catch(e){}
+  return out;
+}
 
 /* A line runs one can SIZE, but can carry several JOBS (products) at that size —
    same size, different customer — each with its own code, ends and order qty.
@@ -714,9 +725,11 @@ function orderInline(j){
   const o=num(j.order);
   if(!o) return '';                       // no order qty → show nothing (no "standing order")
   const m=num(j.made);
-  if(!m) return `<span><span class="lbl">Order</span> <b>${commas(o)}</b></span>`;
-  const left=Math.max(o-m,0), done=m>=o;
-  return `<span><span class="lbl">Order</span> <b>${commas(o)}</b> · ${done?'<span class="done">✓ complete</span>':(commas(m)+' made yesterday · '+commas(left)+' left')}</span>`;
+  if(m>=o) return `<span><span class="lbl">Order</span> <b>${commas(o)}</b> · <span class="done">✓ complete</span></span>`;
+  if(!m) return `<span><span class="lbl">Left</span> <b>${commas(o)}</b> <span class="ord-sub">to run</span></span>`;
+  const left=Math.max(o-m,0);
+  // the big number is what's LEFT; the order total + made yesterday are the small print
+  return `<span><span class="lbl">Left</span> <b>${commas(left)}</b> <span class="ord-sub">(${commas(o)} order · ${commas(m)} made yesterday)</span></span>`;
 }
 function cardHTML(l){
   const st=statusOf(l), sd=STATUS[st];
@@ -1014,7 +1027,9 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.dataset.job!==undefined && t.dataset.jf){             // a product/job field
       const ji=+t.dataset.job;
       if(!l.jobs[ji]) l.jobs[ji]=blankJob();
-      l.jobs[ji][t.dataset.jf]=t.value; scheduleSave(); return;
+      const jf=t.dataset.jf;
+      l.jobs[ji][jf] = (jf==='order'||jf==='made') ? commaField(t) : t.value;
+      scheduleSave(); return;
     }
     if(t.dataset.f){
       const f=t.dataset.f; l[f]=t.value;
@@ -1049,7 +1064,7 @@ document.getElementById('view').addEventListener('input', e=>{
   }
   if(t.dataset.prow!==undefined && t.dataset.pf){               // press end / mode / qty
     const row=board.staff.presses[+t.dataset.prow];
-    if(row){ row[t.dataset.pf]=t.value; scheduleSave(); }
+    if(row){ row[t.dataset.pf] = (t.dataset.pf==='qty') ? commaField(t) : t.value; scheduleSave(); }
     return;
   }
   if(t.dataset.pressrow!==undefined && t.dataset.i!==undefined){ // press operator name
