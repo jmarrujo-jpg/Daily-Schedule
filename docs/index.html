@@ -203,6 +203,33 @@
   body.fs .topbar .hide-fs{display:none}
   .foot-note{text-align:center;color:var(--dim);font-size:11px;padding:6px 0 12px;font-family:var(--mono)}
   @media(max-width:900px){.board-quad,.board-extra{grid-template-columns:1fr}.layout{display:block}.rail{margin-top:14px}}
+
+  /* print: a clean, ink-friendly snapshot of the board (controls removed) */
+  .print-title{display:none}
+  @media print{
+    @page{margin:10mm}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{background:#fff !important;color:#111 !important}
+    .topbar,.foot-note,.legend,.safety{display:none !important}
+    main{padding:0 !important}
+    .print-title{display:block;font-family:var(--disp);font-weight:800;font-size:19px;color:#111;margin:0 0 10px}
+    .layout{display:grid !important;grid-template-columns:1fr 250px !important;gap:8px !important;align-items:start}
+    .board-quad,.board-extra{gap:8px !important}
+    .board-extra{margin-top:8px !important}
+    .line-card,.panel,.quad-empty{background:#fff !important;border:1px solid #bbb !important;box-shadow:none !important;break-inside:avoid}
+    .line-card{border-top-width:5px !important}
+    .line-card.idle{opacity:1 !important}
+    .quad-empty{min-height:0;border-style:dashed}
+    .status-pill.co{animation:none !important}
+    .lc-no{background:#111 !important;color:#fff !important}
+    .lc-size,.job-cust,.job-meta b,.op .who .n1,.rail li{color:#111 !important}
+    .lc-desc,.job-meta,.op .role,.press-no,.setup-lbl,.rail .none{color:#555 !important}
+    .lc-po{color:#111 !important;background:#f2f2f2 !important;border-color:#bbb !important}
+    .job-code{color:#8a5a00 !important;background:#fff7e6 !important;border-color:#e0b050 !important}
+    .pal{color:#0b5fa5 !important;background:#eaf4ff !important;border-color:#9cc6ef !important}
+    .op{border-bottom-color:#ddd !important}
+    .job + .job{border-top-color:#ccc !important}
+  }
 </style>
 </head>
 <body>
@@ -224,9 +251,11 @@
       <button id="mBoard" class="on">Board</button>
       <button id="mEdit">Edit</button>
     </div>
+    <button class="btn hide-fs" id="printBtn" title="Print this schedule">🖨 Print</button>
     <button class="btn" id="fsBtn" title="Fullscreen for TV">⛶ TV</button>
   </div>
 
+  <div class="print-title" id="printTitle"></div>
   <main id="view"></main>
   <div class="foot-note" id="footNote"></div>
 
@@ -241,7 +270,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v13';
+var APP_VERSION = 'v14';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -514,6 +543,8 @@ function updateCoChip(){
 function render(){
   document.getElementById('dateLabel').textContent = fmtDateLong(curDate);
   document.getElementById('datePick').value = curDate;
+  const pt=document.getElementById('printTitle');
+  if(pt) pt.textContent = 'Daily Line Schedule — '+fmtDateLong(curDate);
   document.getElementById('mBoard').classList.toggle('on',mode==="board");
   document.getElementById('mEdit').classList.toggle('on',mode==="edit");
   updateCoChip();
@@ -938,6 +969,11 @@ document.getElementById('fsBtn').onclick=()=>{
   else document.exitFullscreen&&document.exitFullscreen();
 };
 document.addEventListener('fullscreenchange',()=>document.body.classList.toggle('fs',!!document.fullscreenElement));
+document.getElementById('printBtn').onclick=()=>{
+  // Print a snapshot of the schedule (the board), not the edit screen.
+  if(mode!=='board'){ mode='board'; render(); }
+  setTimeout(()=>window.print(), 60);
+};
 
 /* live clock */
 function tick(){ document.getElementById('clock').textContent =
