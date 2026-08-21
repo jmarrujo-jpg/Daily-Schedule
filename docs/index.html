@@ -55,12 +55,9 @@
   /* Board is a fixed 2×2 status map: Run 1st TL · Back Up TR · Run 2nd BL · Change Over BR. */
   .board-quad{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
   .board-extra{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-top:14px}
-  .quad{display:flex;flex-direction:column;gap:9px;min-width:0}
-  .quad-h{font-family:var(--disp);font-weight:800;font-size:13px;letter-spacing:.14em;text-transform:uppercase;
-    padding-bottom:5px;border-bottom:2px solid currentColor;opacity:.9}
+  .quad{display:flex;flex-direction:column;min-width:0}
   .quad-cards{display:flex;flex-direction:column;gap:12px}
-  .quad-empty{border:1px dashed var(--edge);border-radius:9px;padding:20px;text-align:center;color:var(--dim);
-    font-family:var(--disp);font-weight:600;font-size:14px;letter-spacing:.05em}
+  .quad-empty{border:1px dashed var(--edge);border-radius:9px;min-height:64px;opacity:.5}
   @media(min-width:1500px){.layout{display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start}}
 
   .line-card{background:var(--panel);border:1px solid var(--edge);border-top:5px solid var(--edge2);
@@ -238,7 +235,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v10';
+var APP_VERSION = 'v11';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -543,18 +540,15 @@ function renderBoard(){
   // Group lines by status so each falls into a fixed quadrant of the board.
   const byStatus={};
   board.lines.forEach(l=>{ const st=statusOf(l); (byStatus[st]||(byStatus[st]=[])).push(l); });
-  function quad(k,label){
+  function quad(k){
     const ls=byStatus[k]||[];
-    const inner = ls.length ? ls.map(cardHTML).join('') : `<div class="quad-empty">— no line —</div>`;
-    return `<div class="quad"><div class="quad-h" style="color:${STATUS[k].color}">${label}</div>
-      <div class="quad-cards">${inner}</div></div>`;
+    const inner = ls.length ? ls.map(cardHTML).join('') : `<div class="quad-empty"></div>`;
+    return `<div class="quad"><div class="quad-cards">${inner}</div></div>`;
   }
   // Fixed 2×2 map: Run 1st TL · Back Up TR · Run 2nd BL · Change Over BR.
-  const mainQuads=[["run1","Run 1st"],["backup","Back Up"],["run2","Run 2nd"],["co","Change Over"]]
-    .map(([k,l])=>quad(k,l)).join('');
+  const mainQuads=["run1","backup","run2","co"].map(quad).join('');
   // RWR and idle lines only show when there are any, below the map.
-  const extras=[["rwr","RWR (Run When Ready)"],["","Idle / Not Running"]]
-    .filter(([k])=>(byStatus[k]||[]).length).map(([k,l])=>quad(k,l)).join('');
+  const extras=["rwr",""].filter(k=>(byStatus[k]||[]).length).map(quad).join('');
   const boardMain=`<div class="board-quad">${mainQuads}</div>${extras?`<div class="board-extra">${extras}</div>`:''}`;
 
   const railPeople = STAFF_PEOPLE.map(([k,label,accent])=>{
