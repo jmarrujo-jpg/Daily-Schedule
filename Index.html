@@ -212,15 +212,18 @@
   .foot-note{text-align:center;color:var(--dim);font-size:11px;padding:6px 0 12px;font-family:var(--mono)}
   @media(max-width:900px){.board-quad,.board-extra{grid-template-columns:1fr}.layout{display:block}.rail{margin-top:14px}}
 
-  /* print: reproduce the on-screen dark board, tuned to fit one landscape sheet
-     (no zoom — that overflowed the page edges; instead size the pieces to fit) */
+  /* print: two options — color (screen look) and white (writable). Both fit
+     one landscape sheet and carry a centered title header with the date. */
   .print-title{display:none}
   @media print{
-    @page{size:landscape;margin:8mm}
+    @page{size:landscape;margin:9mm}
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
     html,body{background:var(--bg) !important;color:var(--text) !important}
-    .topbar,.foot-note,#conflictBox{display:none !important}
+    .topbar,.foot-note,#conflictBox,.safety{display:none !important}
     main{padding:0 !important}
+    .print-title{display:block;text-align:center;font-family:var(--disp);font-weight:800;
+      font-size:21px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
+      margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid var(--edge2)}
     /* keep the on-screen 2×2 zone map + side rail; the mobile 1-col rule must not win */
     .layout{display:grid !important;grid-template-columns:1fr 240px !important;gap:10px !important;align-items:start}
     .board-quad,.board-extra{display:grid !important;grid-template-columns:1fr 1fr !important;gap:10px !important}
@@ -244,7 +247,27 @@
     .rail .panel{padding:8px 10px}
     .setup{padding-top:6px}
     .legend{margin-top:8px}
-    .safety{font-size:16px;padding:8px}
+
+    /* WHITE option: light, ink-friendly background you can write on */
+    body.print-light{background:#fff !important;color:#111 !important}
+    body.print-light .print-title{color:#111 !important;border-bottom-color:#999 !important}
+    body.print-light .line-card,body.print-light .panel,body.print-light .quad-empty{background:#fff !important;border:1px solid #b7b7b7 !important}
+    body.print-light .quad-empty{border-style:dashed !important}
+    body.print-light .lc-no{background:#111 !important;color:#fff !important}
+    body.print-light .lc-size,body.print-light .job-cust,body.print-light .job-meta b,
+      body.print-light .op .who .n1,body.print-light .rail li{color:#111 !important}
+    body.print-light .rail h3{color:#111 !important}
+    body.print-light .rail .panel.pab h3{color:#b91c1c !important}
+    body.print-light .rail .panel.pvac h3{color:#1d4ed8 !important}
+    body.print-light .rail .panel.ppress h3{color:#0a7f3f !important}
+    body.print-light .lc-desc,body.print-light .job-meta,body.print-light .op .role,
+      body.print-light .press-no,body.print-light .setup-lbl,body.print-light .rail .none{color:#555 !important}
+    body.print-light .lc-po{color:#111 !important;background:#f2f2f2 !important;border-color:#bbb !important}
+    body.print-light .job-code{color:#8a5a00 !important;background:#fff7e6 !important;border-color:#e0b050 !important}
+    body.print-light .pal{color:#0b5fa5 !important;background:#eaf4ff !important;border-color:#9cc6ef !important}
+    body.print-light .op{border-bottom-color:#ddd !important}
+    body.print-light .job + .job{border-top-color:#ccc !important}
+    body.print-light .legend .li{color:#111 !important}
   }
 </style>
 </head>
@@ -267,7 +290,8 @@
       <button id="mBoard" class="on">Board</button>
       <button id="mEdit">Edit</button>
     </div>
-    <button class="btn hide-fs" id="printBtn" title="Print this schedule">🖨 Print</button>
+    <button class="btn hide-fs" id="printBtn" title="Print in color (screen look)">🖨 Color</button>
+    <button class="btn hide-fs" id="printBtnLight" title="Print on a white background (easy to write on)">🖨 White</button>
     <button class="btn" id="fsBtn" title="Fullscreen for TV">⛶ TV</button>
   </div>
 
@@ -286,7 +310,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v18';
+var APP_VERSION = 'v19';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1040,11 +1064,15 @@ document.getElementById('fsBtn').onclick=()=>{
   else document.exitFullscreen&&document.exitFullscreen();
 };
 document.addEventListener('fullscreenchange',()=>document.body.classList.toggle('fs',!!document.fullscreenElement));
-document.getElementById('printBtn').onclick=()=>{
+function doPrint(light){
   // Print a snapshot of the schedule (the board), not the edit screen.
   if(mode!=='board'){ mode='board'; render(); }
+  document.body.classList.toggle('print-light', !!light);
   setTimeout(()=>window.print(), 60);
-};
+}
+document.getElementById('printBtn').onclick=()=>doPrint(false);
+document.getElementById('printBtnLight').onclick=()=>doPrint(true);
+window.addEventListener('afterprint',()=>document.body.classList.remove('print-light'));
 
 /* live clock */
 function tick(){ document.getElementById('clock').textContent =
