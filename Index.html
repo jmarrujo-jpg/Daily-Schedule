@@ -228,38 +228,41 @@
      one landscape sheet and carry a centered title header with the date. */
   .print-title{display:none}
   @media print{
-    @page{size:landscape;margin:0.18in}   /* just clear of the ~0.15in printer dead zone */
+    @page{size:landscape;margin:0}   /* we control the inset ourselves via body padding */
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
     html,body{background:var(--bg) !important;color:var(--text) !important}
+    /* ~0.5in of guaranteed whitespace on every side (title + board), well clear
+       of any printer dead zone — body padding can't be overridden like @page can */
+    body{padding:0.5in !important}
     .topbar,.foot-note,#conflictBox{display:none !important}
     main{padding:0 !important}
     .print-title{display:block;text-align:center;font-family:var(--disp);font-weight:800;
-      font-size:21px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
-      margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid var(--edge2)}
+      font-size:19px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
+      margin:0 0 9px;padding-bottom:7px;border-bottom:2px solid var(--edge2)}
     /* keep the on-screen 2×2 zone map + side rail; the mobile 1-col rule must not win */
-    .layout{display:grid !important;grid-template-columns:1fr 240px !important;gap:10px !important;align-items:start}
-    .board-quad,.board-extra{display:grid !important;grid-template-columns:1fr 1fr !important;gap:10px !important}
-    .board-extra{margin-top:10px !important}
-    .quad-cards{gap:10px}
+    .layout{display:grid !important;grid-template-columns:1fr 210px !important;gap:9px !important;align-items:start}
+    .board-quad,.board-extra{display:grid !important;grid-template-columns:1fr 1fr !important;gap:9px !important}
+    .board-extra{margin-top:9px !important}
+    .quad-cards{gap:9px}
     .line-card,.panel{break-inside:avoid;box-shadow:none !important}
-    .line-card{padding:9px 11px;gap:6px}
-    .status-pill{font-size:15px !important;padding:4px 10px !important}
+    .line-card{padding:8px 10px;gap:5px}
+    .status-pill{font-size:14px !important;padding:3px 9px !important}
     .status-pill.co{animation:none !important}
-    .lc-size{font-size:29px !important}
-    .lc-no{font-size:12px;padding:2px 8px;margin-top:2px}
-    .job-cust{font-size:17px !important}
-    .job{padding:5px 0}
+    .lc-size{font-size:26px !important}
+    .lc-no{font-size:11px;padding:2px 7px;margin-top:2px}
+    .job-cust{font-size:16px !important}
+    .job{padding:4px 0}
     .op{padding:2px 0}
     .op .role{font-size:10px !important}
-    .op .who .n1{font-size:14px !important}
+    .op .who .n1{font-size:13px !important}
     .op .who .nx{font-size:11px !important}
-    .ops{gap:3px 14px !important;padding-top:6px}
-    .rail li{font-size:14px}
-    .rail h3{font-size:13px}
-    .rail .panel{padding:8px 10px}
-    .setup{padding-top:6px}
+    .ops{gap:2px 12px !important;padding-top:5px}
+    .rail li{font-size:13px}
+    .rail h3{font-size:12px}
+    .rail .panel{padding:7px 9px}
+    .setup{padding-top:5px}
     .legend{margin-top:6px}
-    .safety{font-size:15px !important;padding:7px !important;margin-top:6px}
+    .safety{font-size:14px !important;padding:6px !important;margin-top:6px}
 
     /* WHITE option: light, ink-friendly background you can write on */
     body.print-light{background:#fff !important;color:#111 !important}
@@ -323,7 +326,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v22';
+var APP_VERSION = 'v23';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
