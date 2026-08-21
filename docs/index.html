@@ -103,6 +103,11 @@
   .rail ul{list-style:none;display:flex;flex-direction:column;gap:4px}
   .rail li{font-size:17px;font-weight:600;font-family:var(--disp);letter-spacing:.01em}
   .rail .none{color:var(--dim);font-size:14px;font-weight:500}
+  .rail .panel.ppress h3{color:var(--green)}
+  .rail .press-list li{display:flex;align-items:baseline;gap:8px}
+  .rail .press-no{flex:0 0 auto;min-width:74px;font-size:13px;font-weight:800;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--muted)}
+  .rail .press-op{flex:1 1 auto;font-size:17px;font-weight:600}
 
   /* status legend */
   .legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:10px 2px 2px}
@@ -211,7 +216,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v7';
+var APP_VERSION = 'v8';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -260,9 +265,12 @@ const STATUS_ORDER = ["", "run1", "run2", "backup", "rwr", "co"];
 function statusOf(l){ return STATUS[l.status] ? l.status : ""; }
 
 const DEFAULT_LINE_ORDER = ["6","5","4","2"];
-/* Rail: absent/vacation are people lists (roster dropdowns); presses/custodian are free text. */
+/* Rail: absent/vacation are people lists (roster dropdowns); custodian is free text.
+   The Press Department is its own thing: one operator dropdown per press unit. */
 const STAFF_PEOPLE = [["absent","Absent","pab"], ["vacation","Vacation","pvac"]];
-const STAFF_TEXT   = [["presses","Presses & Litho"], ["custodian","Custodian"]];
+const STAFF_TEXT   = [["custodian","Custodian"]];
+/* Press / Litho units — each gets its own operator dropdown (roster names, up to MAX_PER_POS). */
+const PRESS_UNITS = ["13","15","16","17","18","19","20","3","2-SS","3-SS"];
 
 /* ============================ Storage layer ============================
    When API_URL is set, reads/writes go to the Cloudflare Worker (KV-backed) so
@@ -312,6 +320,14 @@ function commas(n){ return n==null||n===''?'':Number(n).toLocaleString('en-US');
    status: "" idle / run1 / run2 / backup / rwr / co  (colored pill + border).
    ops[k]: ARRAY of up to 3 names per position (extras = trainees / 2nd person). */
 function blankJob(){ return { code:"", cust:"", ends:"", order:"", made:"" }; }
+/* Press Department: an object keyed by press unit, each an array of operator names.
+   Starts empty (no slots) so an unstaffed press just doesn't show on the board. */
+function blankPresses(){ const o={}; PRESS_UNITS.forEach(u=>{ o[u]=[]; }); return o; }
+function pressArr(p,u){
+  let v = p ? p[u] : undefined;
+  if(!Array.isArray(v)) v = (v==null||v==='') ? [] : [v];
+  return v.map(s=>String(s==null?'':s)).slice(0,MAX_PER_POS);
+}
 function blankLine(lineNo){
   return { lineNo:String(lineNo), status:"", size:"", desc:"",
     ops:{bodymaker:[""],doubleSeamer:[""],palletizer:[""],frameStraps:[""],forklift:[""]},
@@ -319,7 +335,7 @@ function blankLine(lineNo){
 }
 function blankBoard(date){
   return { date, lines: DEFAULT_LINE_ORDER.map(blankLine),
-    staff:{absent:[],vacation:[],presses:"",custodian:""} };
+    staff:{absent:[],vacation:[],presses:blankPresses(),custodian:""} };
 }
 /* Names for a position, always as an array of strings (max MAX_PER_POS). */
 function opArr(l,k){
@@ -357,10 +373,14 @@ function normalizeBoard(bd){
   if(!bd.lines) bd.lines=[];
   bd.lines.forEach(normalizeLine);
   const s = bd.staff||{};
+  const presses = blankPresses();
+  if(s.presses && typeof s.presses==='object' && !Array.isArray(s.presses)){
+    PRESS_UNITS.forEach(u=>{ presses[u] = pressArr(s.presses, u); });
+  }
   bd.staff = {
     absent: toNameArr(s.absent),
     vacation: toNameArr(s.vacation),
-    presses: typeof s.presses==='string' ? s.presses : toNameArr(s.presses).join('\n'),
+    presses: presses,
     custodian: typeof s.custodian==='string' ? s.custodian : toNameArr(s.custodian).join('\n')
   };
   return bd;
@@ -500,6 +520,15 @@ function renderBoard(){
       ${items.length?`<ul>${items.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:`<div class="none">— none —</div>`}
     </div>`;
   }).join('');
+  const presses = board.staff.presses||{};
+  const pressRows = PRESS_UNITS.map(u=>{
+    const names = pressArr(presses,u).map(s=>s.trim()).filter(Boolean);
+    if(!names.length) return '';
+    return `<li><span class="press-no">Press ${esc(u)}</span><span class="press-op">${names.map(esc).join(', ')}</span></li>`;
+  }).filter(Boolean).join('');
+  const railPresses = `<div class="panel ppress"><h3>Press Department</h3>
+    ${pressRows?`<ul class="press-list">${pressRows}</ul>`:`<div class="none">— none —</div>`}
+  </div>`;
 
   const legend = STATUS_ORDER.filter(k=>k).map(k=>
     `<span class="li"><span class="sw" style="background:${STATUS[k].color}"></span>${STATUS[k].pill}</span>`).join('');
@@ -507,7 +536,7 @@ function renderBoard(){
   document.getElementById('view').innerHTML = `
     <div class="layout">
       <div class="board-grid">${cards}</div>
-      <div class="rail">${railPeople}${railText}</div>
+      <div class="rail">${railPeople}${railPresses}${railText}</div>
     </div>
     <div class="legend">${legend}</div>
     <div class="safety">Have a Safe &amp; Productive Day!</div>`;
@@ -542,6 +571,14 @@ function staffPeopleInputs(key){
   const shown = arr.length?arr:[""];
   const sels = shown.map((n,i)=>`<select data-staffp="${key}" data-i="${i}">${nameOptions(n)}</select>`).join('');
   const add = `<button class="addname" data-addstaff="${key}">＋ add person</button>`;
+  return `<div class="names">${sels}${add}</div>`;
+}
+/* One press unit's operator dropdown(s): roster names, up to MAX_PER_POS people. */
+function pressInputs(u){
+  const arr = pressArr(board.staff.presses, u); const shown = arr.length?arr:[""];
+  const sels = shown.map((n,i)=>
+    `<select class="${i>0?'trainee':''}" data-press="${esc(u)}" data-i="${i}">${nameOptions(n)}</select>`).join('');
+  const add = shown.length<MAX_PER_POS ? `<button class="addname" data-addpress="${esc(u)}">＋ add person</button>` : '';
   return `<div class="names">${sels}${add}</div>`;
 }
 function renderEdit(){
@@ -602,6 +639,8 @@ function renderEdit(){
   const staffText = STAFF_TEXT.map(([k,label])=>`
     <div class="fld"><label>${label} — one name per line</label>
       <textarea data-staff="${k}" rows="4">${esc(board.staff[k]||'')}</textarea></div>`).join('');
+  const pressFields = PRESS_UNITS.map(u=>`
+    <div class="fld"><label>Press ${esc(u)}</label>${pressInputs(u)}</div>`).join('');
 
   document.getElementById('view').innerHTML = `
     <div class="edit-wrap">
@@ -621,6 +660,10 @@ function renderEdit(){
       </div>
       <div class="edit-lines">${lineCards}
         <button class="addline" id="addLine">+ Add line</button>
+      </div>
+      <div class="ecard" style="border-top-color:var(--edge)">
+        <div class="subhead">Press Department <span class="hint">(pick an operator per press — add a 2nd for a trainee)</span></div>
+        <div class="edit-staff">${pressFields}</div>
       </div>
       <div class="ecard" style="border-top-color:var(--edge)">
         <div class="subhead">Absent, vacation &amp; support crew</div>
@@ -689,6 +732,17 @@ document.getElementById('view').addEventListener('input', e=>{
     }
     board.staff[key][i]=t.value; scheduleSave(); return;
   }
+  if(t.dataset.press!==undefined && t.dataset.i!==undefined){    // press operator
+    const u=t.dataset.press, i=+t.dataset.i;
+    if(!board.staff.presses || typeof board.staff.presses!=='object') board.staff.presses=blankPresses();
+    if(!Array.isArray(board.staff.presses[u])) board.staff.presses[u]=[];
+    if(t.value==='__add__'){
+      const name=(prompt('Add a new name to the roster:')||'').trim();
+      if(name){ rosterAdd(name); board.staff.presses[u][i]=name; }
+      scheduleSave(); render(); return;
+    }
+    board.staff.presses[u][i]=t.value; scheduleSave(); return;
+  }
   if(t.dataset.staff!==undefined){ board.staff[t.dataset.staff]=t.value; scheduleSave(); return; }
 });
 document.getElementById('view').addEventListener('keydown', e=>{
@@ -710,6 +764,12 @@ document.getElementById('view').addEventListener('click', async e=>{
     const key=t.dataset.addstaff;
     if(!Array.isArray(board.staff[key])) board.staff[key]=[];
     board.staff[key].push(""); scheduleSave(); render();
+  }
+  else if(t.dataset.addpress!==undefined){                       // add an operator to a press
+    const u=t.dataset.addpress;
+    if(!board.staff.presses || typeof board.staff.presses!=='object') board.staff.presses=blankPresses();
+    if(!Array.isArray(board.staff.presses[u])) board.staff.presses[u]=[];
+    if(board.staff.presses[u].length<MAX_PER_POS){ board.staff.presses[u].push(""); scheduleSave(); render(); }
   }
   else if(t.dataset.addjob!==undefined){                         // add a product/job to a line
     const i=+t.dataset.addjob, L=board.lines[i];
