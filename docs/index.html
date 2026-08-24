@@ -171,7 +171,9 @@
   .palchip:hover{border-color:var(--blue);color:var(--text)}
   .palchip.on{background:rgba(58,160,255,.16);border-color:var(--blue);color:var(--blue)}
   /* red highlight on a field that's part of a scheduling conflict */
-  select.conflict{border:2px solid var(--red) !important;background:rgba(239,68,68,.16) !important}
+  select.conflict{border:2px solid var(--red) !important;background:rgba(239,68,68,.16) !important;color:var(--text) !important}
+  /* keep the open dropdown list readable (don't let the pink tint bleed onto the options) */
+  select.conflict option{background:var(--panel) !important;color:var(--text) !important}
   /* press department rows */
   .pressrows{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
   /* fixed columns: press | operator(grows) | end | type | qty | remove */
@@ -338,7 +340,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v29';
+var APP_VERSION = 'v30';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
