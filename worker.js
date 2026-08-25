@@ -52,7 +52,28 @@ export default {
       new Response(JSON.stringify(obj), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-    if (request.method === 'GET') return json({ ok: true, service: 'daily-schedule-api', build: 'v2-sheets' }, 200);
+    if (request.method === 'GET') {
+      const url = new URL(request.url);
+      // ?slip=YYYY-MM-DD streams that day's Production Slips PDF from Google Drive.
+      if (url.searchParams.has('slip')) {
+        const m = String(url.searchParams.get('slip') || '').match(/(\d{4}-\d{2}-\d{2})/);
+        if (!m) return new Response('Bad date', { status: 400, headers: cors });
+        try {
+          const s = await streamSlip(env, m[1]);
+          if (!s) return new Response(slipNotFoundHtml(m[1]), { status: 404, headers: { ...cors, 'Content-Type': 'text/html; charset=utf-8' } });
+          return new Response(s.body, { status: 200, headers: {
+            ...cors,
+            'Content-Type': s.type || 'application/pdf',
+            'Content-Disposition': 'inline; filename="' + String(s.name || 'slip.pdf').replace(/[\r\n"]/g, '') + '"',
+            'Cache-Control': 'private, max-age=300',
+          } });
+        } catch (e) {
+          return new Response('Production slip error: ' + (e && e.message ? e.message : String(e)),
+            { status: 500, headers: { ...cors, 'Content-Type': 'text/plain; charset=utf-8' } });
+        }
+      }
+      return json({ ok: true, service: 'daily-schedule-api', build: 'v2-sheets' }, 200);
+    }
     if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
 
     let payload;
@@ -86,6 +107,7 @@ async function handle(fn, args, env) {
       return rows.map((r) => String(r[0] || '')).filter(Boolean);
     }
     case 'getTimeOff': return getTimeOff(env, args[0]);
+    case 'getSlipInfo': return getSlipInfo(env, args[0]);
     default:
       throw new Error('Unknown function: ' + fn);
   }
@@ -234,6 +256,82 @@ function classifyTimeOff(title) {
   return { type: isVac ? 'vacation' : 'absent', name };
 }
 
+// ---------------- Google Drive: production slip PDFs ----------------
+// Folder layout (names, not IDs, so it works year to year):
+//   <DRIVE_ROOT_FOLDER_ID = "Metal Production">
+//     └─ "Metal Production <YEAR>"
+//          └─ "Metal Production Slip Scan Archive <YEAR>"
+//               └─ "YY-MM-DD Production Slips.pdf"
+// Set DRIVE_ROOT_FOLDER_ID on the Worker to the shared root folder's ID, and share
+// that folder with the service-account email (GCP_SA_EMAIL) as a Viewer.
+async function driveList(token, q, fields) {
+  const url = 'https://www.googleapis.com/drive/v3/files'
+    + '?q=' + encodeURIComponent(q)
+    + '&fields=' + encodeURIComponent(fields || 'files(id,name,mimeType)')
+    + '&pageSize=100&orderBy=name&supportsAllDrives=true&includeItemsFromAllDrives=true';
+  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+  const t = await r.text();
+  let j; try { j = t ? JSON.parse(t) : {}; } catch (e) { throw new Error('Drive API non-JSON: ' + t.slice(0, 200)); }
+  if (!r.ok) throw new Error('Drive API ' + r.status + ': ' + (j.error && j.error.message ? j.error.message : t.slice(0, 150)));
+  return j.files || [];
+}
+
+// Resolve the archive folder (cached per year) and find the file for a date.
+// Returns {id,name,mimeType} or null.
+const archiveFolderByYear = {};
+async function findSlipFile(env, date) {
+  const root = String(env.DRIVE_ROOT_FOLDER_ID || '').trim();
+  if (!root) throw new Error('Drive not configured — set DRIVE_ROOT_FOLDER_ID on the Worker to the "Metal Production" folder ID.');
+  const token = await getToken(env);
+  const [Y, M, D] = date.split('-');
+  const prefix = Y.slice(2) + '-' + M + '-' + D; // 2026-08-24 -> 26-08-24
+
+  let archiveId = archiveFolderByYear[Y];
+  if (!archiveId) {
+    const FOLDER = "mimeType='application/vnd.google-apps.folder'";
+    // Year container folder (e.g. "Metal Production 2026") — the one that is NOT the archive.
+    const yearFolders = await driveList(token, `'${root}' in parents and ${FOLDER} and name contains '${Y}' and trashed=false`);
+    const yearFolder = yearFolders.find((f) => !/archive/i.test(f.name)) || yearFolders[0];
+    if (!yearFolder) throw new Error('No "' + Y + '" folder inside the Metal Production folder.');
+    // Archive folder inside the year folder (e.g. "Metal Production Slip Scan Archive 2026").
+    const archives = await driveList(token, `'${yearFolder.id}' in parents and ${FOLDER} and name contains 'Archive' and trashed=false`);
+    const archive = archives.find((f) => /slip/i.test(f.name)) || archives[0];
+    if (!archive) throw new Error('No "Slip Scan Archive" folder inside "' + yearFolder.name + '".');
+    archiveId = archive.id;
+    archiveFolderByYear[Y] = archiveId;
+  }
+  // The slip file for the date (name begins with "YY-MM-DD").
+  const files = await driveList(token, `'${archiveId}' in parents and name contains '${prefix}' and trashed=false`);
+  return files.find((f) => String(f.name || '').indexOf(prefix) === 0) || files[0] || null;
+}
+
+// Lightweight existence check for the UI: { found, name }.
+async function getSlipInfo(env, key) {
+  const date = dateFromKey(key);
+  const file = await findSlipFile(env, date);
+  return { found: !!file, name: file ? file.name : '' };
+}
+
+// Fetch the file bytes for streaming back to the browser.
+async function streamSlip(env, date) {
+  const file = await findSlipFile(env, date);
+  if (!file) return null;
+  const token = await getToken(env);
+  const r = await fetch('https://www.googleapis.com/drive/v3/files/' + file.id + '?alt=media&supportsAllDrives=true',
+    { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) { const t = await r.text(); throw new Error('Drive download ' + r.status + ': ' + t.slice(0, 150)); }
+  return { body: r.body, type: file.mimeType || 'application/pdf', name: file.name };
+}
+
+function slipNotFoundHtml(date) {
+  return '<!doctype html><meta charset="utf-8"><title>No slip</title>'
+    + '<body style="font-family:system-ui,Arial;background:#0d1117;color:#eef3f8;display:flex;'
+    + 'align-items:center;justify-content:center;height:100vh;margin:0;text-align:center">'
+    + '<div><div style="font-size:42px">📄</div>'
+    + '<h2>No production slip found for ' + date + '</h2>'
+    + '<p style="color:#8593a0">Nothing named "' + date.slice(2) + ' Production Slips" is in the archive folder yet.</p></div></body>';
+}
+
 // ---------------- ensure the two tabs exist ----------------
 let setupDone = false;
 async function ensureSetup(sheets) {
@@ -273,7 +371,7 @@ async function mintToken(env) {
   if (!email || !key) throw new Error('Service account not configured (GCP_SA_EMAIL / GCP_SA_PRIVATE_KEY).');
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: 'RS256', typ: 'JWT' };
-  const claim = { iss: email, scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar.readonly', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 };
+  const claim = { iss: email, scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.readonly', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 };
   const unsigned = b64urlStr(JSON.stringify(header)) + '.' + b64urlStr(JSON.stringify(claim));
   const ck = await crypto.subtle.importKey('pkcs8', pemToPkcs8(key), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', ck, new TextEncoder().encode(unsigned));

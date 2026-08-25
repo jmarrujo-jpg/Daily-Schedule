@@ -326,6 +326,7 @@
       <button id="mEdit">Edit</button>
     </div>
     <button class="btn" id="refreshBtn" title="Refresh the board from the server now">⟳ Refresh</button>
+    <button class="btn hide-fs" id="slipBtn" title="Open this day's scanned Production Slips" style="display:none">📄 Production Slip</button>
     <button class="btn hide-fs" id="printBtn" title="Print in color (screen look)">🖨 Color</button>
     <button class="btn hide-fs" id="printBtnLight" title="Print on a white background (easy to write on)">🖨 White</button>
     <button class="btn" id="fsBtn" title="Fullscreen for TV">⛶ TV</button>
@@ -346,7 +347,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v34';
+var APP_VERSION = 'v35';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -445,6 +446,7 @@ let curDate = todayStr();
 let board = null;
 let roster = [];   // list of people's names — fills the position / absent / vacation dropdowns
 let saveTimer = null, saving = false, saveError = null, loadError = null;
+let daySaved = false;      // true when the day being viewed exists as a saved board (for slip lookup)
 let lastBoardSig = null;   // last board we've seen from storage — used to skip needless re-renders
 let lastSyncAt = null;     // when the display last confirmed it's in sync with the server
 function boardSig(b){ try{ return JSON.stringify(b); }catch(e){ return 'x'+Math.random(); } }
@@ -588,10 +590,12 @@ async function findSeedBoard(date){
 }
 async function loadBoard(date){
   loadError = null;
+  daySaved = false;
   try{
     const existing = await Store.get(keyFor(date));
     if(existing){
       board = normalizeBoard(existing);
+      daySaved = true;
     }else{
       // No board saved yet for this day — carry the previous work-day forward
       // (production rarely changes much). Not saved until someone edits it.
@@ -707,7 +711,9 @@ function refreshConflicts(){
     });
   }
 }
-function changeoverCount(){ return board.lines.filter(l=>l.status==='co').length; }
+/* Only count change-overs on lines that actually show on the board — a hidden line
+   shouldn't drive the "change-over today" banner. */
+function changeoverCount(){ return board.lines.filter(l=>l.status==='co' && !l.hidden).length; }
 function updateCoChip(){
   const n = changeoverCount(), el=document.getElementById('coChip');
   if(n>0){ el.className='cochip has'; el.textContent='⟳ '+n+' CHANGE-OVER'+(n>1?'S':'')+' TODAY'; }
@@ -1197,7 +1203,7 @@ async function copyFromYesterday(){
 }
 
 /* ============================ Nav / mode / fullscreen ============================ */
-async function goDate(date){ curDate=date; await loadBoard(date); render(); }
+async function goDate(date){ curDate=date; await loadBoard(date); render(); checkSlip(); }
 /* Step one work-day in a direction, skipping Sat/Sun. */
 function shiftWorkday(dateStr, dir){
   const [y,m,d]=dateStr.split('-').map(Number);
@@ -1288,6 +1294,21 @@ function scheduleSync(){
 function manualRefresh(){ pollBoard(true); }
 const rb=document.getElementById('refreshBtn'); if(rb) rb.onclick=manualRefresh;
 
+/* Production slip: show the button only when a scanned PDF exists in Drive for the
+   day being viewed (checked once per day, not on every render). Clicking opens the
+   PDF from the Worker, which streams it with the service account. */
+async function checkSlip(){
+  const btn=document.getElementById('slipBtn'); if(!btn) return;
+  if(!API_URL || !daySaved){ btn.style.display='none'; return; }
+  try{
+    const info=await callApi('getSlipInfo',[keyFor(curDate)]);
+    if(info && info.found){ btn.style.display=''; btn.title='Open '+info.name; }
+    else btn.style.display='none';
+  }catch(e){ btn.style.display='none'; }   // Drive not set up / no access → just hide it
+}
+const sb=document.getElementById('slipBtn');
+if(sb) sb.onclick=()=>{ if(API_URL) window.open(API_URL+'?slip='+encodeURIComponent(curDate),'_blank','noopener'); };
+
 /* Status note in the header so the floor can see the sync state at a glance. */
 function markSynced(){
   const el=document.getElementById('liveNote'); if(!el) return;
@@ -1303,7 +1324,7 @@ setInterval(markSynced, 1000);
 scheduleSync();
 
 /* ============================ Boot ============================ */
-(async function init(){ await loadRoster(); await loadBoard(curDate); render(); })();
+(async function init(){ await loadRoster(); await loadBoard(curDate); render(); checkSlip(); })();
 </script>
 </body>
 </html>
