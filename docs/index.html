@@ -35,6 +35,9 @@
     padding:4px 11px;border-radius:5px;white-space:nowrap}
   .cochip.has{color:#fff;background:var(--red)}
   .cochip.none{color:var(--muted);border:1px solid var(--edge2)}
+  .livenote{font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--green);white-space:nowrap}
+  .livenote.stale{color:var(--amber)}
+  .livenote:empty{display:none}
   .spacer{flex:1}
   .datenav{display:flex;align-items:center;gap:6px}
   .datenav .date{font-family:var(--disp);font-weight:600;font-size:19px;letter-spacing:.03em;min-width:230px;text-align:center;
@@ -306,6 +309,7 @@
       <img class="brand-logo" src="csc-logo.png" alt="CSC">
       <h1>Daily Line Schedule</h1>
       <span class="cochip none" id="coChip">—</span>
+      <span class="livenote" id="liveNote"></span>
     </div>
     <div class="spacer"></div>
     <div class="datenav">
@@ -340,7 +344,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v30';
+var APP_VERSION = 'v31';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -439,6 +443,9 @@ let curDate = todayStr();
 let board = null;
 let roster = [];   // list of people's names — fills the position / absent / vacation dropdowns
 let saveTimer = null, saving = false, saveError = null, loadError = null;
+let lastBoardSig = null;   // last board we've seen from storage — used to skip needless re-renders
+let lastSyncAt = null;     // when the display last confirmed it's in sync with the server
+function boardSig(b){ try{ return JSON.stringify(b); }catch(e){ return 'x'+Math.random(); } }
 
 function todayStr(d=new Date()){ return d.toLocaleDateString('en-CA'); } // YYYY-MM-DD local
 function keyFor(date){ return "board:"+date; }
@@ -596,6 +603,8 @@ async function loadBoard(date){
     board = blankBoard(date);
   }
   board.date = date;
+  lastBoardSig = boardSig(board);   // baseline: the display won't re-render until this changes
+  lastSyncAt = Date.now();
 }
 function scheduleSave(){
   refreshConflicts();      // keep the conflict banner live as fields change
@@ -603,7 +612,7 @@ function scheduleSave(){
   saving=true; saveError=null; updateSaveChip();
   clearTimeout(saveTimer);
   saveTimer=setTimeout(async()=>{
-    try{ await Store.set(keyFor(board.date), board); saveError=null; }
+    try{ await Store.set(keyFor(board.date), board); saveError=null; lastBoardSig=boardSig(board); lastSyncAt=Date.now(); }
     catch(e){ saveError = e && e.message ? e.message : 'Save failed'; }
     saving=false; updateSaveChip();
   }, 500);
@@ -1190,14 +1199,42 @@ function tick(){ document.getElementById('clock').textContent =
   new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false}); }
 setInterval(tick,1000); tick();
 
-/* poll storage while in board mode so a second screen picks up edits */
-setInterval(async()=>{
-  if(mode!=='board'||saving) return;
+/* Live sync: a display in board mode re-checks storage every few seconds and
+   re-paints ONLY when the board actually changed, so edits from another PC show
+   up within a few seconds with no refresh — and an unchanged board never causes
+   a needless repaint (no flicker on the TV). Skipped while this screen is editing
+   or hidden, and paused when a tab is in the background (browsers throttle it
+   anyway) to keep load off the Google Sheet backend. */
+let polling=false;
+async function pollBoard(){
+  if(mode!=='board' || saving || polling || document.hidden) return;
+  polling=true;
   try{
     const fresh=await Store.get(keyFor(curDate));
-    if(fresh){ board=normalizeBoard(fresh); board.date=curDate; renderBoard(); updateCoChip(); }
+    if(fresh){
+      const sig=boardSig(fresh);
+      if(sig!==lastBoardSig){                 // something changed elsewhere — pull it in
+        lastBoardSig=sig;
+        board=normalizeBoard(fresh); board.date=curDate;
+        renderBoard(); updateCoChip();
+      }
+      lastSyncAt=Date.now();
+      markSynced();
+    }
   }catch(e){ /* transient network blip — keep showing the last good board */ }
-},12000);
+  finally{ polling=false; }
+}
+setInterval(pollBoard, 4000);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollBoard(); }); // catch up instantly on focus
+/* Small "Live · updated Ns ago" note so the floor can see the display is current. */
+function markSynced(){
+  const el=document.getElementById('liveNote'); if(!el) return;
+  if(mode!=='board' || loadError){ el.textContent=''; el.classList.remove('stale'); return; }
+  const secs=lastSyncAt?Math.max(0,Math.round((Date.now()-lastSyncAt)/1000)):null;
+  el.textContent = '● Live · updated '+(secs===null||secs<2?'just now':secs+'s ago');
+  el.classList.toggle('stale', secs!==null && secs>20);   // amber if we haven't synced in a while
+}
+setInterval(markSynced, 1000);
 
 /* ============================ Boot ============================ */
 (async function init(){ await loadRoster(); await loadBoard(curDate); render(); })();
