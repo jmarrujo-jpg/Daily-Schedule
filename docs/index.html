@@ -347,7 +347,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v35';
+var APP_VERSION = 'v36';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -729,6 +729,7 @@ function render(){
   document.getElementById('mBoard').classList.toggle('on',mode==="board");
   document.getElementById('mEdit').classList.toggle('on',mode==="edit");
   updateCoChip();
+  updateSlipBtn();
   const fn=document.getElementById('footNote');
   if(loadError){
     fn.style.color='var(--red)';
@@ -1203,7 +1204,7 @@ async function copyFromYesterday(){
 }
 
 /* ============================ Nav / mode / fullscreen ============================ */
-async function goDate(date){ curDate=date; await loadBoard(date); render(); checkSlip(); }
+async function goDate(date){ curDate=date; await loadBoard(date); render(); }
 /* Step one work-day in a direction, skipping Sat/Sun. */
 function shiftWorkday(dateStr, dir){
   const [y,m,d]=dateStr.split('-').map(Number);
@@ -1294,17 +1295,13 @@ function scheduleSync(){
 function manualRefresh(){ pollBoard(true); }
 const rb=document.getElementById('refreshBtn'); if(rb) rb.onclick=manualRefresh;
 
-/* Production slip: show the button only when a scanned PDF exists in Drive for the
-   day being viewed (checked once per day, not on every render). Clicking opens the
-   PDF from the Worker, which streams it with the service account. */
-async function checkSlip(){
+/* Production slip button: shown whenever the online backend is configured (hidden
+   on the TV/fullscreen via hide-fs). Clicking opens that day's scanned PDF, which
+   the Worker streams with the service account; a day with no scan shows a friendly
+   "no slip found" page instead. */
+function updateSlipBtn(){
   const btn=document.getElementById('slipBtn'); if(!btn) return;
-  if(!API_URL || !daySaved){ btn.style.display='none'; return; }
-  try{
-    const info=await callApi('getSlipInfo',[keyFor(curDate)]);
-    if(info && info.found){ btn.style.display=''; btn.title='Open '+info.name; }
-    else btn.style.display='none';
-  }catch(e){ btn.style.display='none'; }   // Drive not set up / no access → just hide it
+  btn.style.display = API_URL ? '' : 'none';
 }
 const sb=document.getElementById('slipBtn');
 if(sb) sb.onclick=()=>{ if(API_URL) window.open(API_URL+'?slip='+encodeURIComponent(curDate),'_blank','noopener'); };
@@ -1324,7 +1321,7 @@ setInterval(markSynced, 1000);
 scheduleSync();
 
 /* ============================ Boot ============================ */
-(async function init(){ await loadRoster(); await loadBoard(curDate); render(); checkSlip(); })();
+(async function init(){ await loadRoster(); await loadBoard(curDate); render(); })();
 </script>
 </body>
 </html>
