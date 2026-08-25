@@ -324,6 +324,7 @@
       <button id="mBoard" class="on">Board</button>
       <button id="mEdit">Edit</button>
     </div>
+    <button class="btn" id="refreshBtn" title="Refresh the board from the server now">⟳ Refresh</button>
     <button class="btn hide-fs" id="printBtn" title="Print in color (screen look)">🖨 Color</button>
     <button class="btn hide-fs" id="printBtnLight" title="Print on a white background (easy to write on)">🖨 White</button>
     <button class="btn" id="fsBtn" title="Fullscreen for TV">⛶ TV</button>
@@ -344,7 +345,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v31';
+var APP_VERSION = 'v32';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1199,15 +1200,30 @@ function tick(){ document.getElementById('clock').textContent =
   new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false}); }
 setInterval(tick,1000); tick();
 
-/* Live sync: a display in board mode re-checks storage every few seconds and
-   re-paints ONLY when the board actually changed, so edits from another PC show
-   up within a few seconds with no refresh — and an unchanged board never causes
-   a needless repaint (no flicker on the TV). Skipped while this screen is editing
-   or hidden, and paused when a tab is in the background (browsers throttle it
-   anyway) to keep load off the Google Sheet backend. */
+/* Live sync — usage-friendly schedule (Cloudflare-backed board).
+   To keep Cloudflare/Google-Sheet calls low, a display only checks for edits on a
+   time-of-day schedule (local shop time):
+     • 5:00–7:00 AM  → every 20 s   (morning setup, things change fast)
+     • 7:00 AM–2:30 PM → every 5 min (light background refresh through the shift)
+     • 2:30 PM–5:00 AM → no automatic checks at all
+   Anyone can force an instant update anytime with the ⟳ Refresh button (1 call).
+   Even during an active window it only actually calls out when the tab is visible
+   and this screen isn't editing, and it re-paints ONLY when the board changed. */
+const SYNC_WINDOWS = [
+  { startMin: 5*60,        endMin: 7*60,          every: 20*1000  },   // 5–7 AM: 20 s
+  { startMin: 7*60,        endMin: 14*60+30,      every: 5*60*1000 }   // 7 AM–2:30 PM: 5 min
+];
+function currentWindow(){
+  const d=new Date(); const mins=d.getHours()*60+d.getMinutes();
+  return SYNC_WINDOWS.find(w=> mins>=w.startMin && mins<w.endMin) || null;
+}
 let polling=false;
-async function pollBoard(){
-  if(mode!=='board' || saving || polling || document.hidden) return;
+/* Fetch the board and re-paint if it changed. `manual` bypasses the schedule (the
+   Refresh button) but still respects edit-mode / already-in-flight guards. */
+async function pollBoard(manual){
+  if(polling) return;
+  if(!manual && (mode!=='board' || saving || document.hidden)) return;
+  if(mode!=='board' || saving) return;
   polling=true;
   try{
     const fresh=await Store.get(keyFor(curDate));
@@ -1219,22 +1235,37 @@ async function pollBoard(){
         renderBoard(); updateCoChip();
       }
       lastSyncAt=Date.now();
-      markSynced();
     }
   }catch(e){ /* transient network blip — keep showing the last good board */ }
-  finally{ polling=false; }
+  finally{ polling=false; markSynced(); }
 }
-setInterval(pollBoard, 4000);
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollBoard(); }); // catch up instantly on focus
-/* Small "Live · updated Ns ago" note so the floor can see the display is current. */
+/* Self-scheduling tick: sleeps until the next check the current window calls for,
+   and simply re-evaluates every 5 min during off-hours (no fetch) so it wakes up
+   on its own when the next morning window opens. */
+let syncTimer=null;
+function scheduleSync(){
+  clearTimeout(syncTimer);
+  const w=currentWindow();
+  if(w) pollBoard(false);
+  syncTimer=setTimeout(scheduleSync, w ? w.every : 5*60*1000);
+}
+/* Manual refresh: always allowed, exactly one call, ignores the schedule. */
+function manualRefresh(){ pollBoard(true); }
+const rb=document.getElementById('refreshBtn'); if(rb) rb.onclick=manualRefresh;
+
+/* Status note in the header so the floor can see the sync state at a glance. */
 function markSynced(){
   const el=document.getElementById('liveNote'); if(!el) return;
   if(mode!=='board' || loadError){ el.textContent=''; el.classList.remove('stale'); return; }
+  const w=currentWindow();
   const secs=lastSyncAt?Math.max(0,Math.round((Date.now()-lastSyncAt)/1000)):null;
-  el.textContent = '● Live · updated '+(secs===null||secs<2?'just now':secs+'s ago');
-  el.classList.toggle('stale', secs!==null && secs>20);   // amber if we haven't synced in a while
+  const ago = secs===null ? 'not yet' : (secs<60?(secs<2?'just now':secs+'s ago')
+            : Math.round(secs/60)+'m ago');
+  if(w){ el.textContent='● Live · '+ago; el.classList.toggle('stale', secs!==null && secs>w.every/1000+30); }
+  else { el.textContent='⏸ Auto-sync off · ⟳ to refresh · updated '+ago; el.classList.add('stale'); }
 }
 setInterval(markSynced, 1000);
+scheduleSync();
 
 /* ============================ Boot ============================ */
 (async function init(){ await loadRoster(); await loadBoard(curDate); render(); })();
