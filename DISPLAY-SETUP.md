@@ -52,7 +52,36 @@ Two easy options — pick one.
 3. Now whenever the PC signs in (including the 5 AM auto sign-in after a nightly
    restart), the schedule opens automatically.
 
-### 4. (Optional) Power on by itself at 5 AM
+### 3b. Weekday-only (skip weekends)
+If the shop is closed weekends, make the display tasks run **Mon-Fri** only:
+- When you create the 5 AM task, choose **Weekly** instead of Daily and tick
+  **Mon, Tue, Wed, Thu, Fri**. (For a task already made as Daily, open its
+  **Triggers** tab → edit the trigger → **Weekly → Mon-Fri**.)
+- The schedule app itself also **skips all automatic server checks on Saturday
+  and Sunday** now, so even if a display is left on over the weekend it stays
+  quiet until Monday. The **⟳ Refresh** button still works any time.
+
+### 4. Rest the screen at night (save the panel + power)
+Put the PC to sleep after the shift; the 5 AM task wakes it back up.
+1. Copy **`sleep-display-pc.bat`** (in this repo) to the PC, e.g.
+   `C:\schedule\sleep-display-pc.bat`.
+2. **Task Scheduler → Create Basic Task** → name `Schedule Display - Sleep` →
+   **Weekly → Mon-Fri** → time e.g. **3:00 PM** → **Start a program** → point at
+   the `.bat`.
+3. Make sure sleep can actually happen and wake works:
+   - **Settings → System → Power** → allow the PC to **Sleep** (don't set it to
+     Never if you use this task).
+   - **Control Panel → Power Options → Change plan settings → Change advanced
+     power settings → Sleep → Allow wake timers → Enable.** (This lets the 5 AM
+     "Schedule Display" task wake the PC.)
+4. Confirm the **5 AM task's Conditions tab** has **"Wake the computer to run this
+   task"** checked (from step 3, Option A).
+
+Net effect: **sleeps ~3 PM, wakes and shows the board at 5 AM, weekdays only.**
+Prefer a full shutdown instead of sleep? Edit `sleep-display-pc.bat` (it explains
+the one-line change) and enable **Wake on RTC** in the BIOS (see below).
+
+### 5. (Optional) Power on by itself at 5 AM
 If you shut the PC down at night, have it power itself back on:
 - Enter the PC's **BIOS/UEFI** (tap Del or F2 at boot) → look for
   **Power Management → Wake on RTC / Resume by Alarm / Auto Power On** → set daily

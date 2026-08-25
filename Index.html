@@ -345,7 +345,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v32';
+var APP_VERSION = 'v33';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1214,7 +1214,10 @@ const SYNC_WINDOWS = [
   { startMin: 7*60,        endMin: 14*60+30,      every: 5*60*1000 }   // 7 AM–2:30 PM: 5 min
 ];
 function currentWindow(){
-  const d=new Date(); const mins=d.getHours()*60+d.getMinutes();
+  const d=new Date();
+  const day=d.getDay();                 // 0 Sun … 6 Sat
+  if(day===0 || day===6) return null;   // weekends: no automatic checks (⟳ Refresh still works)
+  const mins=d.getHours()*60+d.getMinutes();
   return SYNC_WINDOWS.find(w=> mins>=w.startMin && mins<w.endMin) || null;
 }
 let polling=false;
