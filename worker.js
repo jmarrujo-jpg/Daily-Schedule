@@ -85,6 +85,7 @@ async function handle(fn, args, env) {
       const rows = await sheets.values(BOARDS_TAB + '!A2:A100000');
       return rows.map((r) => String(r[0] || '')).filter(Boolean);
     }
+    case 'getTimeOff': return getTimeOff(env, args[0]);
     default:
       throw new Error('Unknown function: ' + fn);
   }
@@ -147,6 +148,92 @@ function dateFromKey(k) {
   return m[1];
 }
 
+// ---------------- Google Calendar: time-off (Absent / Vacation) ----------------
+// Configure ONE of these on the Worker (Settings > Variables and Secrets):
+//   CALENDAR_ID           one calendar; event titles say the type (see classifyTimeOff)
+//   CALENDAR_ID_VACATION  a calendar where every event = someone on vacation (title = name)
+//   CALENDAR_ID_ABSENT    a calendar where every event = someone absent    (title = name)
+// Share the calendar(s) with the service-account email (GCP_SA_EMAIL) as "See all event
+// details". A calendar's ID is in Google Calendar > Settings > that calendar > "Integrate
+// calendar" > Calendar ID (personal calendars look like an email address).
+async function getTimeOff(env, key) {
+  const date = dateFromKey(key);
+  const single = String(env.CALENDAR_ID || '').trim();
+  const vacCal = String(env.CALENDAR_ID_VACATION || '').trim();
+  const absCal = String(env.CALENDAR_ID_ABSENT || '').trim();
+  if (!single && !vacCal && !absCal) {
+    throw new Error('No calendar configured — set CALENDAR_ID (or CALENDAR_ID_VACATION / CALENDAR_ID_ABSENT) on the Worker.');
+  }
+  const token = await getToken(env);
+  const vacation = [], absent = [];
+  const pushUniq = (arr, name) => {
+    const n = String(name || '').trim();
+    if (n && !arr.some((x) => x.toLowerCase() === n.toLowerCase())) arr.push(n);
+  };
+  if (vacCal) (await calEventsForDate(token, vacCal, date)).forEach((e) => pushUniq(vacation, e.summary));
+  if (absCal) (await calEventsForDate(token, absCal, date)).forEach((e) => pushUniq(absent, e.summary));
+  if (single) {
+    (await calEventsForDate(token, single, date)).forEach((e) => {
+      const c = classifyTimeOff(e.summary);
+      if (c.type === 'vacation') pushUniq(vacation, c.name); else pushUniq(absent, c.name);
+    });
+  }
+  return { vacation, absent };
+}
+
+function addDaysUTC(dateStr, n) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+// True if the event covers `date` (YYYY-MM-DD). All-day events use start.date/end.date
+// (end is exclusive); timed events use the date part of start/end dateTime.
+function eventCoversDate(e, date) {
+  if (e.status === 'cancelled') return false;
+  const s = e.start || {}, en = e.end || {};
+  if (s.date) {
+    const start = s.date;
+    const end = en.date || addDaysUTC(start, 1);
+    return date >= start && date < end;
+  }
+  if (s.dateTime) {
+    const start = s.dateTime.slice(0, 10);
+    const end = (en.dateTime || s.dateTime).slice(0, 10);
+    return date >= start && date <= end;
+  }
+  return false;
+}
+
+async function calEventsForDate(token, calId, date) {
+  const url = 'https://www.googleapis.com/calendar/v3/calendars/'
+    + encodeURIComponent(calId) + '/events'
+    + '?singleEvents=true&orderBy=startTime&maxResults=250'
+    + '&timeMin=' + encodeURIComponent(addDaysUTC(date, -1) + 'T00:00:00Z')
+    + '&timeMax=' + encodeURIComponent(addDaysUTC(date, 2) + 'T00:00:00Z');
+  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+  const t = await r.text();
+  let j; try { j = t ? JSON.parse(t) : {}; } catch (e) { throw new Error('Calendar API non-JSON: ' + t.slice(0, 200)); }
+  if (!r.ok) {
+    const msg = j.error && j.error.message ? j.error.message : t.slice(0, 200);
+    throw new Error('Calendar API ' + r.status + ' for "' + calId + '": ' + msg
+      + (r.status === 404 ? ' (check the Calendar ID and that it is shared with ' + '' + 'the service account)' : ''));
+  }
+  return (j.items || []).filter((e) => eventCoversDate(e, date));
+}
+
+// Decide Vacation vs Absent from an event title, and strip the keyword to leave the name.
+// Examples: "John Smith - Vacation", "Vacation: John Smith", "Maria (PTO)", "Sam Sick".
+// No keyword found → treated as Absent, whole title used as the name.
+const TIMEOFF_KEYWORDS = /\b(vacation|vac|pto|holiday|absent|absence|sick|out|off|ncns|no ?call|call ?out)\b/ig;
+function classifyTimeOff(title) {
+  const raw = String(title || '').trim();
+  const low = raw.toLowerCase();
+  const isVac = /\b(vacation|vac|pto|holiday)\b/.test(low);
+  let name = raw.replace(TIMEOFF_KEYWORDS, ' ').replace(/[\-:|()\[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!name) name = raw; // title was only a keyword
+  return { type: isVac ? 'vacation' : 'absent', name };
+}
+
 // ---------------- ensure the two tabs exist ----------------
 let setupDone = false;
 async function ensureSetup(sheets) {
@@ -186,7 +273,7 @@ async function mintToken(env) {
   if (!email || !key) throw new Error('Service account not configured (GCP_SA_EMAIL / GCP_SA_PRIVATE_KEY).');
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: 'RS256', typ: 'JWT' };
-  const claim = { iss: email, scope: 'https://www.googleapis.com/auth/spreadsheets', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 };
+  const claim = { iss: email, scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar.readonly', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 };
   const unsigned = b64urlStr(JSON.stringify(header)) + '.' + b64urlStr(JSON.stringify(claim));
   const ck = await crypto.subtle.importKey('pkcs8', pemToPkcs8(key), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', ck, new TextEncoder().encode(unsigned));

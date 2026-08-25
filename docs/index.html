@@ -201,6 +201,7 @@
     padding:9px;font-family:var(--disp);font-weight:600;letter-spacing:.05em;font-size:13px;text-transform:uppercase}
   .addjob:hover{color:var(--amber);border-color:var(--amber-d)}
   .edit-staff{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+  .btn.tiny{padding:3px 9px;font-size:12px;margin-left:8px;vertical-align:middle}
   .staff-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
   @media(max-width:820px){.staff-row{grid-template-columns:1fr}}
   .rm{background:transparent;color:var(--dim);border:1px solid var(--edge2);border-radius:4px;padding:5px 9px;font-size:12px}
@@ -345,7 +346,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v33';
+var APP_VERSION = 'v34';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -991,7 +992,10 @@ function renderEdit(){
           <button class="addline" id="addPressRow">＋ add press</button>
         </div>
         <div class="ecard" style="border-top-color:var(--edge)">
-          <div class="subhead">Absent, vacation &amp; support crew</div>
+          <div class="subhead">Absent, vacation &amp; support crew
+            <button class="btn tiny" id="pullTimeOff" title="Fill Absent &amp; Vacation from the shared Google Calendar for this day">⤓ Pull from Calendar</button>
+            <span class="hint" id="timeOffStatus"></span>
+          </div>
           <div class="edit-staff">${staffPeople}${staffText}</div>
         </div>
       </div>
@@ -1101,8 +1105,36 @@ document.getElementById('view').addEventListener('keydown', e=>{
     if(rosterAdd(e.target.value)) render();
   }
 });
+/* Normalize a calendar name to the roster's spelling when it matches (case-insensitive),
+   so calendar entries line up with the dropdowns. */
+function matchRoster(names){
+  return (names||[]).map(n=>{ const hit=roster.find(r=>r.toLowerCase()===String(n).toLowerCase()); return hit||n; });
+}
+/* Pull today's Absent / Vacation people from the shared Google Calendar (via the Worker)
+   and merge them into this day's lists — existing manual entries are kept. */
+async function pullTimeOff(){
+  const st=document.getElementById('timeOffStatus');
+  const setStatus=(msg,err)=>{ const el=document.getElementById('timeOffStatus'); if(el){ el.style.color=err?'var(--red)':''; el.textContent=msg; } };
+  if(!API_URL){ setStatus('Calendar needs the online backend (API_URL is blank).',true); return; }
+  setStatus('Checking calendar…',false);
+  try{
+    const res=await callApi('getTimeOff',[keyFor(curDate)]);
+    const norm=arr=>Array.from(new Set((arr||[]).map(s=>String(s||'').trim()).filter(Boolean)));
+    const calVac=matchRoster(norm(res&&res.vacation));
+    const calAbs=matchRoster(norm(res&&res.absent));
+    const merge=(cur,add)=>{ const out=(Array.isArray(cur)?cur.slice():[]).map(s=>String(s||'').trim()).filter(Boolean);
+      add.forEach(n=>{ if(!out.some(x=>x.toLowerCase()===String(n).toLowerCase())) out.push(n); }); return out; };
+    board.staff.vacation=merge(board.staff.vacation,calVac);
+    board.staff.absent=merge(board.staff.absent,calAbs);
+    scheduleSave(); render();
+    setStatus((calVac.length+calAbs.length)
+      ? ('Pulled '+calVac.length+' on vacation, '+calAbs.length+' absent for this day.')
+      : 'No time-off entries on the calendar for this day.', false);
+  }catch(e){ setStatus('Calendar error: '+(e&&e.message?e.message:'failed'), true); }
+}
 document.getElementById('view').addEventListener('click', async e=>{
   const t=e.target;
+  if(t.id==='pullTimeOff'){ pullTimeOff(); return; }
   if(t.id==='addLine'){ board.lines.push(blankLine("")); scheduleSave(); render(); }
   else if(t.id==='addPressRow'){ board.staff.presses.push(blankPressRow()); scheduleSave(); render(); }
   else if(t.id==='addName'){ const inp=document.getElementById('newName'); if(rosterAdd(inp&&inp.value)) render(); }
