@@ -7,7 +7,12 @@ own, with nobody typing a password.
 risk and doesn't help. Instead, turn on **automatic sign-in** for this one PC, so
 Windows logs itself in and lands on the desktop with no prompt.
 
-The schedule URL: **https://jmarrujo-jpg.github.io/Daily-Schedule/**
+The display URL (note the **`?tv=1`** — it gives the clean board look, hiding the
+toolbar buttons and the Board/Edit switch on the display):
+**https://jmarrujo-jpg.github.io/Daily-Schedule/?tv=1**
+
+Your own editing PC should open the **plain** URL (no `?tv=1`) so it keeps all the
+buttons: **https://jmarrujo-jpg.github.io/Daily-Schedule/**
 
 ---
 

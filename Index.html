@@ -347,7 +347,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v36';
+var APP_VERSION = 'v37';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1219,11 +1219,16 @@ document.getElementById('todayBtn').onclick=()=>goDate(todayStr());
 document.getElementById('datePick').onchange=e=>goDate(e.target.value);
 document.getElementById('mBoard').onclick=()=>{ mode='board'; render(); };
 document.getElementById('mEdit').onclick=()=>{ mode='edit'; render(); };
+/* TV / kiosk mode: opening the page with ?tv (e.g. the display PC's kiosk shortcut)
+   forces the clean board look — hides the toolbar buttons and the Board/Edit switch —
+   even though browser kiosk fullscreen doesn't trigger the Fullscreen API. The plain
+   URL (your editing PC) keeps all the controls. */
+const TV_MODE = /(?:[?&]tv\b|[?&]kiosk\b|#tv\b|#kiosk\b)/i.test(location.search + location.hash);
 document.getElementById('fsBtn').onclick=()=>{
   if(!document.fullscreenElement){ document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen(); mode='board'; render(); }
   else document.exitFullscreen&&document.exitFullscreen();
 };
-document.addEventListener('fullscreenchange',()=>document.body.classList.toggle('fs',!!document.fullscreenElement));
+document.addEventListener('fullscreenchange',()=>document.body.classList.toggle('fs', TV_MODE || !!document.fullscreenElement));
 function doPrint(light){
   // Print a snapshot of the schedule (the board), not the edit screen.
   if(mode!=='board'){ mode='board'; render(); }
@@ -1321,7 +1326,10 @@ setInterval(markSynced, 1000);
 scheduleSync();
 
 /* ============================ Boot ============================ */
-(async function init(){ await loadRoster(); await loadBoard(curDate); render(); })();
+(async function init(){
+  if(TV_MODE){ mode='board'; document.body.classList.add('fs'); }   // clean board look for the display PC
+  await loadRoster(); await loadBoard(curDate); render();
+})();
 </script>
 </body>
 </html>
