@@ -3,15 +3,26 @@
 # you don't need this file at all.
 #
 # The Worker reads/writes a Google Sheet with a service account, so there is NO KV binding.
-# Configure these on the Worker instead (Settings > Variables and Secrets), not here:
+# SECRETS must be configured on the Worker (Settings > Variables and Secrets), never here:
 #   GCP_SA_EMAIL        (secret)   service account email
 #   GCP_SA_PRIVATE_KEY  (secret)   the private_key from the key JSON
-#   SHEET_ID            (variable) optional; defaults to the schedule workbook baked into worker.js
-#   ALLOWED_ORIGIN      (variable) optional; e.g. https://jmarrujo-jpg.github.io
 #   API_TOKEN           (secret)   optional shared-token gate
+#   CALENDAR_ID         (variable) optional; the shared time-off calendar's ID (Absent/Vacation pull)
+#
+# The plain (non-secret) variables below are kept HERE so a deploy from the repo always
+# restores them — a variable added only in the dashboard can get dropped on a later deploy.
+# The Drive folder ID is not sensitive (access is granted by sharing the folder with the
+# service account, not by knowing the ID), so it is safe to store in the repo.
 #
 # The Worker's name in the Cloudflare dashboard must match "name" below, or wrangler will deploy
 # to a Worker with this name instead. Change it to match your Worker if you named it something else.
 name = "daily-schedule"
 main = "worker.js"
 compatibility_date = "2024-11-06"
+keep_vars = true   # don't wipe dashboard-set vars/secrets (e.g. GCP_SA_*, CALENDAR_ID) on deploy
+
+[vars]
+# "Metal Production" root folder in Google Drive — holds the per-year Production Slip archives.
+DRIVE_ROOT_FOLDER_ID = "1j2xwKeCKPG5kKCX5PK0Q8gAEK16mvX8I"
+# ALLOWED_ORIGIN = "https://jmarrujo-jpg.github.io"   # uncomment to lock CORS to your Pages site
+# SHEET_ID = "..."   # optional; defaults to the workbook baked into worker.js
