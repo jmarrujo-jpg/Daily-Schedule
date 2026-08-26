@@ -300,9 +300,19 @@ async function findSlipFile(env, date) {
     archiveId = archive.id;
     archiveFolderByYear[Y] = archiveId;
   }
-  // The slip file for the date (name begins with "YY-MM-DD").
+  // The slip file for the date. NOTE: Drive's `name contains` is a loose, token-based
+  // match (it splits on the dashes), so the query can return many unrelated files.
+  // We therefore ONLY accept a file whose name actually BEGINS with "YY-MM-DD"
+  // followed by a separator — never a fallback to some other file — so a missing
+  // date returns null ("no slip") instead of the wrong day's slip.
   const files = await driveList(token, `'${archiveId}' in parents and name contains '${prefix}' and trashed=false`);
-  return files.find((f) => String(f.name || '').indexOf(prefix) === 0) || files[0] || null;
+  const hit = files.find((f) => {
+    const n = String(f.name || '');
+    if (n.indexOf(prefix) !== 0) return false;         // must start with the exact date
+    const after = n.charAt(prefix.length);
+    return after === '' || after === ' ' || after === '.' || after === '_' || after === '-';
+  });
+  return hit || null;
 }
 
 // Lightweight existence check for the UI: { found, name }.
