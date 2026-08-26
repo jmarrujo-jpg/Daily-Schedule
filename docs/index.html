@@ -177,6 +177,9 @@
   select.conflict{border:2px solid var(--red) !important;background:rgba(239,68,68,.16) !important;color:var(--text) !important}
   /* keep the open dropdown list readable (don't let the pink tint bleed onto the options) */
   select.conflict option{background:var(--panel) !important;color:var(--text) !important}
+  /* amber caution: a soft heads-up (e.g. covering Run 1st then Run 2nd) — edit view only */
+  select.caution{border:2px solid var(--amber) !important;background:rgba(255,179,0,.14) !important;color:var(--text) !important}
+  select.caution option{background:var(--panel) !important;color:var(--text) !important}
   /* press department rows */
   .pressrows{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
   /* fixed columns: press | operator(grows) | end | type | qty | remove */
@@ -228,6 +231,12 @@
   .conflicts ul{list-style:none;display:flex;flex-direction:column;gap:5px}
   .conflicts li{font-size:15px;color:var(--text);line-height:1.35}
   .conflicts li b{font-family:var(--disp);font-weight:700}
+  /* amber caution banner — soft heads-up, shown on the edit view only */
+  .cautions{background:rgba(255,179,0,.09);border:1px solid var(--amber-d);border-radius:8px;padding:10px 15px;margin-bottom:12px}
+  .cautions-h{font-family:var(--disp);font-weight:800;font-size:14px;letter-spacing:.04em;color:var(--amber);margin-bottom:5px}
+  .cautions ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+  .cautions li{font-size:14px;color:var(--text);line-height:1.35}
+  .cautions li b{font-family:var(--disp);font-weight:700}
 
   /* roster manager */
   .roster{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
@@ -347,7 +356,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v37';
+var APP_VERSION = 'v38';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -647,16 +656,22 @@ async function saveRoster(){
 /* Find people scheduled in conflicting spots — working while marked
    absent/vacation, double-booked across positions, or absent AND on vacation.
    Hidden lines are ignored (they're not on the board). */
+/* Statuses that run at different times of day, so ONE person can cover two of
+   them (run first, then move to the next). A double-booking that's only across
+   these — and across DIFFERENT ones — is a soft "caution", not a hard conflict. */
+const SEQ_STATUS = new Set(['run1','run2','rwr']);
 function collectConflicts(){
   const people={};
-  function add(raw, label, kind){
+  function add(raw, label, kind, status){
     const k=String(raw||'').trim().toLowerCase(); if(!k) return;
     const p=people[k]||(people[k]={name:String(raw).trim(), locs:[]});
-    if(!p.locs.some(x=>x.label===label && x.kind===kind)) p.locs.push({label,kind});
+    if(!p.locs.some(x=>x.label===label && x.kind===kind))
+      p.locs.push({label, kind, st:status||'', seq:SEQ_STATUS.has(status)});
   }
   board.lines.forEach(l=>{
     if(l.hidden) return;
-    OP_ROLES.forEach(([key,label])=> opArr(l,key).forEach(n=> add(n,'Line '+(l.lineNo||'?')+' · '+label,'work')));
+    const st=statusOf(l);
+    OP_ROLES.forEach(([key,label])=> opArr(l,key).forEach(n=> add(n,'Line '+(l.lineNo||'?')+' · '+label,'work',st)));
   });
   (board.staff.presses||[]).forEach(row=>
     (row.ops||[]).forEach(n=> add(n,'Press '+(row.u||'?'),'work')));
@@ -670,44 +685,84 @@ function collectConflicts(){
     const work=p.locs.filter(x=>x.kind==='work');
     const absent=p.locs.some(x=>x.kind==='absent');
     const vac=p.locs.some(x=>x.kind==='vacation');
+    // Off conflicts (working while marked off, or both off states) — always a
+    // hard alert, shown on the board too. This is the vacation/absent exception.
     if(work.length && (absent||vac)){
       const off=[absent?'Absent':null, vac?'Vacation':null].filter(Boolean).join(' & ');
-      out.push({name:p.name, msg:'is marked '+off+' but is also assigned to '+work.map(w=>w.label).join(', ')});
-    }
-    if(work.length>=2){
-      out.push({name:p.name, msg:'is booked in '+work.length+' spots at once — '+work.map(w=>w.label).join(', ')});
+      out.push({name:p.name, sev:'alert', msg:'is marked '+off+' but is also assigned to '+work.map(w=>w.label).join(', ')});
     }
     if(absent && vac){
-      out.push({name:p.name, msg:'is listed as both Absent and on Vacation'});
+      out.push({name:p.name, sev:'alert', msg:'is listed as both Absent and on Vacation'});
+    }
+    // Double-booked while working. Soften to a caution (edit-only, no board
+    // banner) when every spot is a Run 1st / Run 2nd / RWR line AND they're
+    // different slots — those run at different times, so one person can cover
+    // them. Same-slot (e.g. two Run 1st) or any press/custodian stays an alert.
+    if(work.length>=2){
+      const allSeq = work.every(w=>w.seq);
+      const distinct = new Set(work.map(w=>w.st)).size === work.length;
+      const sev = (allSeq && distinct) ? 'caution' : 'alert';
+      const verb = sev==='caution' ? 'is covering ' : 'is booked in ';
+      const tail = sev==='caution'
+        ? work.length+' running lines — '+work.map(w=>w.label).join(', ')+' (they run at different times)'
+        : work.length+' spots at once — '+work.map(w=>w.label).join(', ');
+      out.push({name:p.name, sev, msg:verb+tail});
     }
   });
   return out;
 }
-function conflictBannerHTML(){
-  const conflicts = collectConflicts();
-  if(!conflicts.length) return '';
-  return `<div class="conflicts">
-    <div class="conflicts-h">⚠ ${conflicts.length} scheduling conflict${conflicts.length>1?'s':''}</div>
-    <ul>${conflicts.map(c=>`<li><b>${esc(c.name)}</b> ${esc(c.msg)}</li>`).join('')}</ul>
-  </div>`;
+/* includeCaution: the edit view shows both the red alerts and the amber
+   cautions; the board view passes false so only real alerts ever reach it. */
+function conflictBannerHTML(includeCaution){
+  const all = collectConflicts();
+  const alerts   = all.filter(c=>c.sev!=='caution');
+  const cautions = includeCaution ? all.filter(c=>c.sev==='caution') : [];
+  let html='';
+  if(alerts.length){
+    html += `<div class="conflicts">
+      <div class="conflicts-h">⚠ ${alerts.length} scheduling conflict${alerts.length>1?'s':''}</div>
+      <ul>${alerts.map(c=>`<li><b>${esc(c.name)}</b> ${esc(c.msg)}</li>`).join('')}</ul>
+    </div>`;
+  }
+  if(cautions.length){
+    html += `<div class="cautions">
+      <div class="cautions-h">◆ ${cautions.length} heads-up${cautions.length>1?'s':''}</div>
+      <ul>${cautions.map(c=>`<li><b>${esc(c.name)}</b> ${esc(c.msg)}</li>`).join('')}</ul>
+    </div>`;
+  }
+  return html;
 }
-/* Set of lowercased names currently in a conflict — used to flag the fields. */
+/* Names currently flagged, split by severity — used to color the edit fields.
+   Red (alert) wins over amber (caution) if a person is in both. */
 let CFLICT_SET = new Set();
+let CAUTION_SET = new Set();
 function conflictNames(){
-  const set=new Set();
-  collectConflicts().forEach(c=> set.add(String(c.name).trim().toLowerCase()));
-  return set;
+  const alert=new Set(), caution=new Set();
+  collectConflicts().forEach(c=>{
+    const k=String(c.name).trim().toLowerCase();
+    if(c.sev==='caution') caution.add(k); else alert.add(k);
+  });
+  alert.forEach(k=> caution.delete(k));
+  return {alert, caution};
 }
-function conflictClass(n){ return (n && CFLICT_SET.has(String(n).trim().toLowerCase())) ? ' conflict' : ''; }
-/* Update the banner AND the red field highlights in place (no full re-render). */
+function conflictClass(n){
+  const k = n && String(n).trim().toLowerCase();
+  if(!k) return '';
+  if(CFLICT_SET.has(k))  return ' conflict';
+  if(CAUTION_SET.has(k)) return ' caution';
+  return '';
+}
+/* Update the banner AND the field highlights in place (no full re-render). */
 function refreshConflicts(){
-  CFLICT_SET = conflictNames();
+  const sets = conflictNames();
+  CFLICT_SET = sets.alert; CAUTION_SET = sets.caution;
   const box=document.getElementById('conflictBox');
-  if(box) box.innerHTML=conflictBannerHTML();
+  if(box) box.innerHTML=conflictBannerHTML(mode==='edit');
   if(mode==='edit'){
     document.querySelectorAll('#view select[data-op],#view select[data-staffp],#view select[data-pressrow]').forEach(sel=>{
       const v=(sel.value||'').trim().toLowerCase();
       sel.classList.toggle('conflict', !!v && CFLICT_SET.has(v));
+      sel.classList.toggle('caution', !!v && !CFLICT_SET.has(v) && CAUTION_SET.has(v));
     });
   }
 }
@@ -841,7 +896,7 @@ function renderBoard(){
     `<span class="li"><span class="sw" style="background:${STATUS[k].color}"></span>${STATUS[k].pill}</span>`).join('');
 
   document.getElementById('view').innerHTML = `
-    <div id="conflictBox">${conflictBannerHTML()}</div>
+    <div id="conflictBox">${conflictBannerHTML(false)}</div>
     <div class="layout">
       <div class="board-main">${boardMain}</div>
       <div class="rail">${railPresses}${staffPanel('vacation','Vacation','pvac')}${staffPanel('absent','Absent','pab')}${staffPanel('custodian','Custodian','pcust')}${railText}</div>
@@ -909,7 +964,7 @@ function pressEditRows(){
   }).join('');
 }
 function renderEdit(){
-  CFLICT_SET = conflictNames();                         // which name fields to flag red
+  { const s=conflictNames(); CFLICT_SET=s.alert; CAUTION_SET=s.caution; }  // fields to flag red / amber
   if(!board.staff.presses.length) board.staff.presses.push(blankPressRow());  // one row to start
   const lineCards = board.lines.map((l,idx)=>{
     const sizeOpts = sizeOptionsFor(l.lineNo, l.size);
@@ -991,7 +1046,7 @@ function renderEdit(){
         <button class="btn" id="copyPrev">Start from yesterday</button>
         <button class="btn" id="clearDay">Clear this day</button>
       </div>
-      <div id="conflictBox">${conflictBannerHTML()}</div>
+      <div id="conflictBox">${conflictBannerHTML(true)}</div>
       <div class="staff-row">
         <div class="ecard" style="border-top-color:var(--edge)">
           <div class="subhead">Press Department <span class="hint">(pick a press &amp; its operator — ＋ person for a trainee, ＋ add press for another)</span></div>
