@@ -96,9 +96,9 @@
   .job-cust{font-family:var(--disp);font-weight:700;font-size:23px;text-transform:uppercase;letter-spacing:.02em;color:var(--text)}
   .job-code{font-family:var(--mono);font-weight:600;font-size:13px;color:var(--amber);
     background:rgba(255,179,0,.08);border:1px solid var(--amber-d);border-radius:5px;padding:2px 8px}
-  /* spray coating badge (I/S / O/S) — its own color so it reads apart from the code */
-  .job-spray{display:inline-flex;gap:4px;align-self:center}
-  .spray-tag{font-family:var(--disp);font-weight:800;font-size:14px;letter-spacing:.04em;color:var(--purple);
+  /* stripe badge (I/S / O/S) — its own color so it reads apart from the code */
+  .job-stripe{display:inline-flex;gap:4px;align-self:center}
+  .stripe-tag{font-family:var(--disp);font-weight:800;font-size:14px;letter-spacing:.04em;color:var(--purple);
     background:rgba(161,117,255,.14);border:1px solid var(--purple);border-radius:5px;padding:2px 8px}
   .job-meta{display:flex;gap:20px;flex-wrap:wrap;align-items:baseline;margin-top:3px;font-size:14px;color:var(--muted)}
   .job-meta b{color:var(--text);font-family:var(--mono);font-weight:600;font-size:15px}
@@ -177,9 +177,9 @@
     background:var(--panel2);color:var(--muted);border:1px solid var(--edge2);border-radius:7px;padding:8px 13px}
   .palchip:hover{border-color:var(--blue);color:var(--text)}
   .palchip.on{background:rgba(58,160,255,.16);border-color:var(--blue);color:var(--blue)}
-  /* spray chips share the pill shape but use purple so they read apart from pallet */
-  .spraychip:hover{border-color:var(--purple);color:var(--text)}
-  .spraychip.on{background:rgba(161,117,255,.16);border-color:var(--purple);color:var(--purple)}
+  /* stripe chips share the pill shape but use purple so they read apart from pallet */
+  .stripechip:hover{border-color:var(--purple);color:var(--text)}
+  .stripechip.on{background:rgba(161,117,255,.16);border-color:var(--purple);color:var(--purple)}
   /* red highlight on a field that's part of a scheduling conflict */
   select.conflict{border:2px solid var(--red) !important;background:rgba(239,68,68,.16) !important;color:var(--text) !important}
   /* keep the open dropdown list readable (don't let the pink tint bleed onto the options) */
@@ -384,7 +384,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v40';
+var APP_VERSION = 'v41';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -443,7 +443,7 @@ const PRESS_UNITS = ["13","15","16","17","18","19","20","3","2-SS","3-SS"];
    straps → cover caps → frame → pallet type. Wood pallet is the implied
    default (95% of jobs), so only the plastic exception is listed. */
 const PALLET_OPTS = ["2 Straps","4 Straps","Cover Caps","Plastic Frames","Wood Frame","Plastic Pallet"];
-const SPRAY_OPTS  = ["I/S","O/S"];   // inside spray / outside spray (can coating)
+const STRIPE_OPTS  = ["I/S","O/S"];   // inside stripe (I/S) / outside stripe (O/S)
 function sortPallet(arr){
   return (arr||[]).filter(Boolean).slice().sort((a,b)=>{
     const ia=PALLET_OPTS.indexOf(a), ib=PALLET_OPTS.indexOf(b);
@@ -510,13 +510,13 @@ function commaField(el){
    same size, different customer — each with its own code, ends and order qty.
    status: "" idle / run1 / run2 / backup / rwr / co  (colored pill + border).
    ops[k]: ARRAY of up to 3 names per position (extras = trainees / 2nd person). */
-function blankJob(){ return { code:"", cust:"", ends:"", order:"", made:"", spray:[], pallet:[] }; }
-/* Spray coating on the can — inside (I/S), outside (O/S), or both. Kept as an
-   array subset of SPRAY_OPTS in canonical order so the board reads I/S then O/S. */
-function sprayArr(v){
+function blankJob(){ return { code:"", cust:"", ends:"", order:"", made:"", stripe:[], pallet:[] }; }
+/* Stripe on the can — inside (I/S), outside (O/S), or both. Kept as an
+   array subset of STRIPE_OPTS in canonical order so the board reads I/S then O/S. */
+function stripeArr(v){
   const src = Array.isArray(v) ? v.map(x=>String(x||'').trim())
             : (typeof v==='string' ? v.split(/[^A-Za-z/]+/) : []);
-  return SPRAY_OPTS.filter(o=> src.includes(o));
+  return STRIPE_OPTS.filter(o=> src.includes(o));
 }
 /* Press Department: a list of running presses. Each row picks a press unit and
    one or more operators — [{u:"13", ops:["Andy"]}, …]. Add a row per press. */
@@ -571,7 +571,7 @@ function normalizeLine(l){
   if(Array.isArray(l.jobs) && l.jobs.length){
     l.jobs = l.jobs.map(j=>({ code:String(j.code||''), cust:String(j.cust||''),
       ends:String(j.ends||''), order:String(j.order==null?'':j.order), made:String(j.made==null?'':j.made),
-      spray:sprayArr(j.spray), pallet:palOf(j.pallet) })).slice(0,MAX_JOBS);
+      stripe:stripeArr(j.stripe!=null?j.stripe:j.spray), pallet:palOf(j.pallet) })).slice(0,MAX_JOBS);
   }else{
     const j1={ code:String(l.code||''), cust:String(l.cust||l.of||''), ends:String(l.ends1||''),
       order:String(l.order==null?'':l.order), made:String(l.made==null?'':l.made), pallet:[] };
@@ -859,7 +859,7 @@ function orderInline(j){
 }
 function cardHTML(l){
   const st=statusOf(l), sd=STATUS[st];
-  const jobs = (l.jobs||[]).filter(j=>j.cust||j.code||j.ends||j.order||(j.pallet&&j.pallet.length)||(j.spray&&j.spray.length));
+  const jobs = (l.jobs||[]).filter(j=>j.cust||j.code||j.ends||j.order||(j.pallet&&j.pallet.length)||(j.stripe&&j.stripe.length));
   const jobsHTML = jobs.map(j=>{
     const pal=sortPallet(j.pallet);
     const palHTML = pal.length
@@ -870,7 +870,7 @@ function cardHTML(l){
       <div class="job-head">
         ${j.cust?`<span class="job-cust">${esc(j.cust)}</span>`:''}
         ${j.code?`<span class="job-code">${esc(j.code)}</span>`:''}
-        ${(j.spray&&j.spray.length)?`<span class="job-spray" title="Spray coating">${sprayArr(j.spray).map(s=>`<span class="spray-tag">${esc(s)}</span>`).join('')}</span>`:''}
+        ${(j.stripe&&j.stripe.length)?`<span class="job-stripe" title="Stripe (inside / outside)">${stripeArr(j.stripe).map(s=>`<span class="stripe-tag">${esc(s)}</span>`).join('')}</span>`:''}
       </div>
       <div class="job-meta">
         ${j.ends?`<span><span class="lbl">Ends</span> <b>${esc(j.ends)}</b></span>`:''}
@@ -1043,10 +1043,10 @@ function renderEdit(){
           <div class="fld"><label>Made yesterday <span class="hint">(deducts &amp; carries over)</span></label>
             <input class="mono" inputmode="numeric" value="${esc(j.made)}" data-line="${idx}" data-job="${ji}" data-jf="made"></div>
         </div>
-        <div class="fld"><label>Spray <span class="hint">(inside / outside — tap either or both)</span></label>
-          <div class="pallet-pick">${SPRAY_OPTS.map(opt=>{
-            const on=(j.spray||[]).includes(opt);
-            return `<button class="palchip spraychip${on?' on':''}" data-line="${idx}" data-job="${ji}" data-spray="${esc(opt)}">${esc(opt)}</button>`;
+        <div class="fld"><label>Stripe <span class="hint">(inside / outside — tap either or both)</span></label>
+          <div class="pallet-pick">${STRIPE_OPTS.map(opt=>{
+            const on=(j.stripe||[]).includes(opt);
+            return `<button class="palchip stripechip${on?' on':''}" data-line="${idx}" data-job="${ji}" data-stripe="${esc(opt)}">${esc(opt)}</button>`;
           }).join('')}</div></div>
         <div class="fld"><label>Pallet set-up <span class="hint">(tap all that apply — mix &amp; match)</span></label>
           <div class="pallet-pick">${palPick}</div></div>
@@ -1294,12 +1294,12 @@ document.getElementById('view').addEventListener('click', async e=>{
       scheduleSave(); render();
     }
   }
-  else if(t.dataset.spray!==undefined){                          // toggle a product's spray (I/S / O/S)
-    const L=board.lines[+t.dataset.line], j=L&&L.jobs[+t.dataset.job], opt=t.dataset.spray;
+  else if(t.dataset.stripe!==undefined){                          // toggle a product's stripe (I/S / O/S)
+    const L=board.lines[+t.dataset.line], j=L&&L.jobs[+t.dataset.job], opt=t.dataset.stripe;
     if(j){
-      const set=new Set(sprayArr(j.spray));
+      const set=new Set(stripeArr(j.stripe));
       if(set.has(opt)) set.delete(opt); else set.add(opt);
-      j.spray=SPRAY_OPTS.filter(o=>set.has(o));   // keep canonical I/S-then-O/S order
+      j.stripe=STRIPE_OPTS.filter(o=>set.has(o));   // keep canonical I/S-then-O/S order
       scheduleSave(); render();
     }
   }
