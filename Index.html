@@ -96,6 +96,10 @@
   .job-cust{font-family:var(--disp);font-weight:700;font-size:23px;text-transform:uppercase;letter-spacing:.02em;color:var(--text)}
   .job-code{font-family:var(--mono);font-weight:600;font-size:13px;color:var(--amber);
     background:rgba(255,179,0,.08);border:1px solid var(--amber-d);border-radius:5px;padding:2px 8px}
+  /* spray coating badge (I/S / O/S) — its own color so it reads apart from the code */
+  .job-spray{display:inline-flex;gap:4px;align-self:center}
+  .spray-tag{font-family:var(--disp);font-weight:800;font-size:14px;letter-spacing:.04em;color:var(--purple);
+    background:rgba(161,117,255,.14);border:1px solid var(--purple);border-radius:5px;padding:2px 8px}
   .job-meta{display:flex;gap:20px;flex-wrap:wrap;align-items:baseline;margin-top:3px;font-size:14px;color:var(--muted)}
   .job-meta b{color:var(--text);font-family:var(--mono);font-weight:600;font-size:15px}
   .job-meta .lbl{font-family:var(--disp);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
@@ -173,6 +177,9 @@
     background:var(--panel2);color:var(--muted);border:1px solid var(--edge2);border-radius:7px;padding:8px 13px}
   .palchip:hover{border-color:var(--blue);color:var(--text)}
   .palchip.on{background:rgba(58,160,255,.16);border-color:var(--blue);color:var(--blue)}
+  /* spray chips share the pill shape but use purple so they read apart from pallet */
+  .spraychip:hover{border-color:var(--purple);color:var(--text)}
+  .spraychip.on{background:rgba(161,117,255,.16);border-color:var(--purple);color:var(--purple)}
   /* red highlight on a field that's part of a scheduling conflict */
   select.conflict{border:2px solid var(--red) !important;background:rgba(239,68,68,.16) !important;color:var(--text) !important}
   /* keep the open dropdown list readable (don't let the pink tint bleed onto the options) */
@@ -245,6 +252,12 @@
     animation:announcePulse 2.4s ease-in-out infinite}
   @keyframes announcePulse{0%,100%{box-shadow:0 0 0 3px rgba(255,179,0,.14),0 6px 22px rgba(0,0,0,.35)}
     50%{box-shadow:0 0 0 6px rgba(255,179,0,.30),0 6px 22px rgba(0,0,0,.35)}}
+  /* the announcement editor box — roomy and legible, not a cramped default field */
+  .announce-input{display:block;width:100%;box-sizing:border-box;resize:vertical;min-height:80px;
+    margin:2px 0 12px;background:var(--panel2);color:var(--text);border:1px solid var(--amber-d);
+    border-radius:9px;padding:13px 15px;font-family:var(--disp);font-weight:600;font-size:18px;line-height:1.4}
+  .announce-input::placeholder{color:var(--dim);font-weight:500}
+  .announce-input:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(255,179,0,.20)}
   .announce-ico{font-size:34px;line-height:1;flex:none}
   .announce-body{min-width:0}
   .announce-h{display:block;font-family:var(--disp);font-weight:800;font-size:13px;letter-spacing:.14em;
@@ -371,7 +384,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v39';
+var APP_VERSION = 'v40';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -430,6 +443,7 @@ const PRESS_UNITS = ["13","15","16","17","18","19","20","3","2-SS","3-SS"];
    straps → cover caps → frame → pallet type. Wood pallet is the implied
    default (95% of jobs), so only the plastic exception is listed. */
 const PALLET_OPTS = ["2 Straps","4 Straps","Cover Caps","Plastic Frames","Wood Frame","Plastic Pallet"];
+const SPRAY_OPTS  = ["I/S","O/S"];   // inside spray / outside spray (can coating)
 function sortPallet(arr){
   return (arr||[]).filter(Boolean).slice().sort((a,b)=>{
     const ia=PALLET_OPTS.indexOf(a), ib=PALLET_OPTS.indexOf(b);
@@ -496,7 +510,14 @@ function commaField(el){
    same size, different customer — each with its own code, ends and order qty.
    status: "" idle / run1 / run2 / backup / rwr / co  (colored pill + border).
    ops[k]: ARRAY of up to 3 names per position (extras = trainees / 2nd person). */
-function blankJob(){ return { code:"", cust:"", ends:"", order:"", made:"", pallet:[] }; }
+function blankJob(){ return { code:"", cust:"", ends:"", order:"", made:"", spray:[], pallet:[] }; }
+/* Spray coating on the can — inside (I/S), outside (O/S), or both. Kept as an
+   array subset of SPRAY_OPTS in canonical order so the board reads I/S then O/S. */
+function sprayArr(v){
+  const src = Array.isArray(v) ? v.map(x=>String(x||'').trim())
+            : (typeof v==='string' ? v.split(/[^A-Za-z/]+/) : []);
+  return SPRAY_OPTS.filter(o=> src.includes(o));
+}
 /* Press Department: a list of running presses. Each row picks a press unit and
    one or more operators — [{u:"13", ops:["Andy"]}, …]. Add a row per press. */
 function blankPressRow(){ return { u:"", ops:[""], end:"", mode:"", qty:"" }; }
@@ -550,7 +571,7 @@ function normalizeLine(l){
   if(Array.isArray(l.jobs) && l.jobs.length){
     l.jobs = l.jobs.map(j=>({ code:String(j.code||''), cust:String(j.cust||''),
       ends:String(j.ends||''), order:String(j.order==null?'':j.order), made:String(j.made==null?'':j.made),
-      pallet:palOf(j.pallet) })).slice(0,MAX_JOBS);
+      spray:sprayArr(j.spray), pallet:palOf(j.pallet) })).slice(0,MAX_JOBS);
   }else{
     const j1={ code:String(l.code||''), cust:String(l.cust||l.of||''), ends:String(l.ends1||''),
       order:String(l.order==null?'':l.order), made:String(l.made==null?'':l.made), pallet:[] };
@@ -838,7 +859,7 @@ function orderInline(j){
 }
 function cardHTML(l){
   const st=statusOf(l), sd=STATUS[st];
-  const jobs = (l.jobs||[]).filter(j=>j.cust||j.code||j.ends||j.order||(j.pallet&&j.pallet.length));
+  const jobs = (l.jobs||[]).filter(j=>j.cust||j.code||j.ends||j.order||(j.pallet&&j.pallet.length)||(j.spray&&j.spray.length));
   const jobsHTML = jobs.map(j=>{
     const pal=sortPallet(j.pallet);
     const palHTML = pal.length
@@ -849,6 +870,7 @@ function cardHTML(l){
       <div class="job-head">
         ${j.cust?`<span class="job-cust">${esc(j.cust)}</span>`:''}
         ${j.code?`<span class="job-code">${esc(j.code)}</span>`:''}
+        ${(j.spray&&j.spray.length)?`<span class="job-spray" title="Spray coating">${sprayArr(j.spray).map(s=>`<span class="spray-tag">${esc(s)}</span>`).join('')}</span>`:''}
       </div>
       <div class="job-meta">
         ${j.ends?`<span><span class="lbl">Ends</span> <b>${esc(j.ends)}</b></span>`:''}
@@ -1021,6 +1043,11 @@ function renderEdit(){
           <div class="fld"><label>Made yesterday <span class="hint">(deducts &amp; carries over)</span></label>
             <input class="mono" inputmode="numeric" value="${esc(j.made)}" data-line="${idx}" data-job="${ji}" data-jf="made"></div>
         </div>
+        <div class="fld"><label>Spray <span class="hint">(inside / outside — tap either or both)</span></label>
+          <div class="pallet-pick">${SPRAY_OPTS.map(opt=>{
+            const on=(j.spray||[]).includes(opt);
+            return `<button class="palchip spraychip${on?' on':''}" data-line="${idx}" data-job="${ji}" data-spray="${esc(opt)}">${esc(opt)}</button>`;
+          }).join('')}</div></div>
         <div class="fld"><label>Pallet set-up <span class="hint">(tap all that apply — mix &amp; match)</span></label>
           <div class="pallet-pick">${palPick}</div></div>
       </div>`;}).join('');
@@ -1076,7 +1103,7 @@ function renderEdit(){
       </div>
       <div class="ecard" style="border-top-color:var(--amber)">
         <div class="subhead">Announcement <span class="hint">(shows big on the board for everyone — leave blank for none)</span></div>
-        <textarea data-announce id="announceInput" rows="2" placeholder="e.g. Safety meeting at 10 AM in the break room">${esc(board.announce||'')}</textarea>
+        <textarea class="announce-input" data-announce id="announceInput" rows="3" placeholder="e.g. Safety meeting at 10 AM in the break room — leave blank for no announcement">${esc(board.announce||'')}</textarea>
         <div id="announcePreview">${announceBannerHTML()}</div>
       </div>
       <div id="conflictBox">${conflictBannerHTML(true)}</div>
@@ -1264,6 +1291,15 @@ document.getElementById('view').addEventListener('click', async e=>{
       if(!Array.isArray(j.pallet)) j.pallet=[];
       const i=j.pallet.indexOf(opt);
       if(i>=0) j.pallet.splice(i,1); else j.pallet.push(opt);
+      scheduleSave(); render();
+    }
+  }
+  else if(t.dataset.spray!==undefined){                          // toggle a product's spray (I/S / O/S)
+    const L=board.lines[+t.dataset.line], j=L&&L.jobs[+t.dataset.job], opt=t.dataset.spray;
+    if(j){
+      const set=new Set(sprayArr(j.spray));
+      if(set.has(opt)) set.delete(opt); else set.add(opt);
+      j.spray=SPRAY_OPTS.filter(o=>set.has(o));   // keep canonical I/S-then-O/S order
       scheduleSave(); render();
     }
   }
