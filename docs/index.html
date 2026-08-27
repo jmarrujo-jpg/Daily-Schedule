@@ -384,7 +384,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v41';
+var APP_VERSION = 'v42';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -709,6 +709,7 @@ function collectConflicts(){
   board.lines.forEach(l=>{
     if(l.hidden) return;
     const st=statusOf(l);
+    if(st==='') return;   // idle line: ready, not running — its names don't count as booked
     OP_ROLES.forEach(([key,label])=> opArr(l,key).forEach(n=> add(n,'Line '+(l.lineNo||'?')+' · '+label,'work',st)));
   });
   (board.staff.presses||[]).forEach(row=>
@@ -878,7 +879,9 @@ function cardHTML(l){
       </div>
       ${palHTML}
     </div>`;}).join('');
-  const ops = OP_ROLES.map(([k,label])=>{
+  // Idle = the line is ready but not running today, so it carries no crew on the
+  // board — hide the names entirely (they're kept in the edit view for later).
+  const ops = st==='' ? '' : OP_ROLES.map(([k,label])=>{
     const names = opArr(l,k).map(s=>s.trim()).filter(Boolean);
     const who = names.length
       ? `<span class="who"><span class="n1">${esc(names[0])}</span>${names.slice(1).map(n=>`<span class="nx">+ ${esc(n)}</span>`).join('')}</span>`
@@ -898,7 +901,7 @@ function cardHTML(l){
       ${l.po?`<span class="lc-po"><span class="lbl">PO</span> ${esc(l.po)}</span>`:''}
     </div>
     ${jobsHTML?`<div class="jobs">${jobsHTML}</div>`:''}
-    <div class="ops">${ops}</div>
+    ${ops?`<div class="ops">${ops}</div>`:''}
   </div>`;
 }
 /* Board order: running lines first (Run 1st, Run 2nd, Back Up, RWR, CO), idle last. */
