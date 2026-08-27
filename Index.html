@@ -238,6 +238,21 @@
   .cautions li{font-size:14px;color:var(--text);line-height:1.35}
   .cautions li b{font-family:var(--disp);font-weight:700}
 
+  /* announcement banner — bright, high-contrast, impossible to miss on the floor */
+  .announce{display:flex;align-items:center;gap:16px;margin-bottom:12px;padding:14px 20px;border-radius:12px;
+    background:linear-gradient(90deg,rgba(255,179,0,.22),rgba(255,179,0,.10));
+    border:2px solid var(--amber);box-shadow:0 0 0 3px rgba(255,179,0,.18),0 6px 22px rgba(0,0,0,.35);
+    animation:announcePulse 2.4s ease-in-out infinite}
+  @keyframes announcePulse{0%,100%{box-shadow:0 0 0 3px rgba(255,179,0,.14),0 6px 22px rgba(0,0,0,.35)}
+    50%{box-shadow:0 0 0 6px rgba(255,179,0,.30),0 6px 22px rgba(0,0,0,.35)}}
+  .announce-ico{font-size:34px;line-height:1;flex:none}
+  .announce-body{min-width:0}
+  .announce-h{display:block;font-family:var(--disp);font-weight:800;font-size:13px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--amber)}
+  .announce-msg{font-family:var(--disp);font-weight:700;font-size:24px;line-height:1.25;color:var(--text);
+    white-space:pre-wrap;word-break:break-word}
+  @media (prefers-reduced-motion:reduce){ .announce{animation:none} }
+
   /* roster manager */
   .roster{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
   .chip{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--edge2);
@@ -356,7 +371,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v38';
+var APP_VERSION = 'v39';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -509,7 +524,7 @@ function blankLine(lineNo){
     jobs:[ blankJob() ] };
 }
 function blankBoard(date){
-  return { date, lines: DEFAULT_LINE_ORDER.map(blankLine),
+  return { date, announce:"", lines: DEFAULT_LINE_ORDER.map(blankLine),
     staff:{absent:[],vacation:[],presses:[],custodian:[]} };
 }
 /* Names for a position, always as an array of strings (max MAX_PER_POS). */
@@ -556,6 +571,7 @@ function normalizeLine(l){
 }
 function normalizeBoard(bd){
   if(!bd.lines) bd.lines=[];
+  bd.announce = typeof bd.announce==='string' ? bd.announce : '';
   bd.lines.forEach(normalizeLine);
   const s = bd.staff||{};
   bd.staff = {
@@ -578,6 +594,7 @@ async function loadRoster(){
    big order counts down day by day and repeats. */
 function seedFromBoard(src){
   const bd = normalizeBoard(JSON.parse(JSON.stringify(src)));
+  bd.announce = "";   // announcements are day-specific — don't carry yesterday's forward
   bd.lines.forEach(l=>{
     (l.jobs||[]).forEach(j=>{
       const o=num(j.order), m=num(j.made);
@@ -710,6 +727,16 @@ function collectConflicts(){
     }
   });
   return out;
+}
+/* Announcement banner — only rendered when there's actually a message. Shown
+   big and bright on both the board and the edit view so nobody misses it. */
+function announceBannerHTML(){
+  const msg = String((board && board.announce) || '').trim();
+  if(!msg) return '';
+  return `<div class="announce" role="alert">
+    <span class="announce-ico">📢</span>
+    <div class="announce-body"><span class="announce-h">Announcement</span><div class="announce-msg">${esc(msg)}</div></div>
+  </div>`;
 }
 /* includeCaution: the edit view shows both the red alerts and the amber
    cautions; the board view passes false so only real alerts ever reach it. */
@@ -896,6 +923,7 @@ function renderBoard(){
     `<span class="li"><span class="sw" style="background:${STATUS[k].color}"></span>${STATUS[k].pill}</span>`).join('');
 
   document.getElementById('view').innerHTML = `
+    ${announceBannerHTML()}
     <div id="conflictBox">${conflictBannerHTML(false)}</div>
     <div class="layout">
       <div class="board-main">${boardMain}</div>
@@ -1046,6 +1074,11 @@ function renderEdit(){
         <button class="btn" id="copyPrev">Start from yesterday</button>
         <button class="btn" id="clearDay">Clear this day</button>
       </div>
+      <div class="ecard" style="border-top-color:var(--amber)">
+        <div class="subhead">Announcement <span class="hint">(shows big on the board for everyone — leave blank for none)</span></div>
+        <textarea data-announce id="announceInput" rows="2" placeholder="e.g. Safety meeting at 10 AM in the break room">${esc(board.announce||'')}</textarea>
+        <div id="announcePreview">${announceBannerHTML()}</div>
+      </div>
       <div id="conflictBox">${conflictBannerHTML(true)}</div>
       <div class="staff-row">
         <div class="ecard" style="border-top-color:var(--edge)">
@@ -1158,6 +1191,12 @@ document.getElementById('view').addEventListener('input', e=>{
       scheduleSave(); render(); return;
     }
     row.ops[i]=t.value; scheduleSave(); return;
+  }
+  if(t.dataset.announce!==undefined){
+    board.announce=t.value; scheduleSave();
+    const pv=document.getElementById('announcePreview');   // live preview, keep focus in the box
+    if(pv) pv.innerHTML=announceBannerHTML();
+    return;
   }
   if(t.dataset.staff!==undefined){ board.staff[t.dataset.staff]=t.value; scheduleSave(); return; }
 });
