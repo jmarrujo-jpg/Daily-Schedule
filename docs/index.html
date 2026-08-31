@@ -267,11 +267,22 @@
   @media (prefers-reduced-motion:reduce){ .announce{animation:none} }
 
   /* roster manager */
-  .roster{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  .roster{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
   .chip{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--edge2);
     border-radius:6px;padding:5px 5px 5px 12px;font-family:var(--disp);font-weight:600;font-size:16px}
   .chip button{background:transparent;border:none;color:var(--dim);font-size:18px;line-height:.9;padding:0 5px;cursor:pointer}
   .chip button:hover{color:var(--red)}
+  /* one roster person: name + Primary / Secondary role pickers + remove */
+  .rmember{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--panel2);
+    border:1px solid var(--edge2);border-radius:7px;padding:7px 10px 7px 13px}
+  .rmember-name{font-family:var(--disp);font-weight:700;font-size:16px;min-width:130px;flex:1 1 130px}
+  .rmember-role{display:inline-flex;align-items:center;gap:6px}
+  .rmember-role .rl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700}
+  .rmember-role select{background:var(--panel);color:var(--text);border:1px solid var(--edge2);
+    border-radius:5px;padding:5px 7px;font-size:13px}
+  .rmember .rmname{background:transparent;border:none;color:var(--dim);font-size:19px;line-height:.9;
+    padding:0 4px;cursor:pointer}
+  .rmember .rmname:hover{color:var(--red)}
   .roster-add{display:flex;gap:8px;max-width:440px}
   .roster-add input{flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--edge2);border-radius:5px;padding:9px 10px;font-size:15px}
 
@@ -384,7 +395,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v45';
+var APP_VERSION = 'v46';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -606,7 +617,7 @@ function normalizeBoard(bd){
 }
 
 async function loadRoster(){
-  try{ const r = await Store.getRoster(); roster = Array.isArray(r)?r:[]; }
+  try{ const r = await Store.getRoster(); roster = normalizeRoster(r); }
   catch(e){ roster = []; }
 }
 /* Carry a saved day forward as the starting point for the next work-day.
@@ -681,10 +692,25 @@ function updateSaveChip(){
 }
 
 /* ---- Roster (people) ---- */
+/* Roster entries carry a Primary and Secondary role (an OP_ROLES key, or '').
+   Older saves were a plain list of name strings — accept those and upgrade. */
+function normalizeRoster(v){
+  if(!Array.isArray(v)) return [];
+  const roleOk=r=> OP_ROLES.some(([k])=>k===r) ? r : '';
+  const seen=new Set(), out=[];
+  v.forEach(item=>{
+    const o = (item && typeof item==='object') ? item : {name:item};
+    const name=String(o.name==null?'':o.name).trim(); if(!name) return;
+    const key=name.toLowerCase(); if(seen.has(key)) return; seen.add(key);
+    out.push({name, primary:roleOk(o.primary||''), secondary:roleOk(o.secondary||'')});
+  });
+  return out;
+}
+function rosterNames(){ return roster.map(p=>p.name); }
 function rosterAdd(name){
   name=(name||'').trim(); if(!name) return false;
-  if(roster.some(x=>x.toLowerCase()===name.toLowerCase())) return true;  // already there
-  roster.push(name); saveRoster(); return true;
+  if(roster.some(p=>p.name.toLowerCase()===name.toLowerCase())) return true;  // already there
+  roster.push({name, primary:'', secondary:''}); saveRoster(); return true;
 }
 function rosterRemove(i){ if(i>=0 && i<roster.length){ roster.splice(i,1); saveRoster(); } }
 async function saveRoster(){
@@ -820,6 +846,29 @@ function refreshConflicts(){
 /* Only count change-overs on lines that actually show on the board — a hidden line
    shouldn't drive the "change-over today" banner. */
 function changeoverCount(){ return board.lines.filter(l=>l.status==='co' && !l.hidden).length; }
+
+/* People who must never be auto-placed on a line: anyone marked absent or on
+   vacation, or already working a press. */
+function unavailableForLines(){
+  const s=new Set();
+  const add=n=>{ const k=String(n||'').trim().toLowerCase(); if(k) s.add(k); };
+  (board.staff.absent||[]).forEach(add);
+  (board.staff.vacation||[]).forEach(add);
+  (board.staff.presses||[]).forEach(row=> (row.ops||[]).forEach(add));
+  return s;
+}
+/* Fill a line's positions from the roster's PRIMARY roles. A position is filled
+   only when exactly one AVAILABLE person (not off / not on a press) has that
+   primary role; otherwise it's cleared. Replaces whatever was there. Fires when
+   a line is set to Run 1st. */
+function autofillPrimary(l){
+  const off=unavailableForLines();
+  if(!l.ops) l.ops={};
+  OP_ROLES.forEach(([k])=>{
+    const cands=roster.filter(p=>p.primary===k && !off.has(p.name.trim().toLowerCase()));
+    l.ops[k] = (cands.length===1) ? [cands[0].name] : [""];
+  });
+}
 function updateCoChip(){
   const n = changeoverCount(), el=document.getElementById('coChip');
   if(n>0){ el.className='cochip has'; el.textContent='⟳ '+n+' CHANGE-OVER'+(n>1?'S':'')+' TODAY'; }
@@ -968,7 +1017,7 @@ function statusOptions(cur){
 /* One person dropdown: — none —, every roster name, then "＋ Add new name…".
    If the stored value isn't in the roster it's kept so nothing is lost. */
 function nameOptions(cur){
-  const names = roster.slice().sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
+  const names = rosterNames().sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
   let opts = `<option value="">— none —</option>`;
   let matched=false;
   names.forEach(n=>{ const sel = (n===cur); if(sel) matched=true;
@@ -1087,8 +1136,18 @@ function renderEdit(){
     </div>`;
   }).join('');
 
+  const roleSel=(i,field,cur)=>{
+    let o=`<option value="">—</option>`;
+    OP_ROLES.forEach(([k,label])=>{ o+=`<option value="${k}" ${k===cur?'selected':''}>${esc(label)}</option>`; });
+    return `<select data-roleidx="${i}" data-rolefield="${field}">${o}</select>`;
+  };
   const rosterChips = roster.length
-    ? roster.map((n,i)=>`<span class="chip">${esc(n)}<button class="rmname" data-ri="${i}" title="Remove ${esc(n)}">×</button></span>`).join('')
+    ? roster.map((p,i)=>`<div class="rmember">
+        <span class="rmember-name">${esc(p.name)}</span>
+        <span class="rmember-role"><span class="rl">Primary</span>${roleSel(i,'primary',p.primary)}</span>
+        <span class="rmember-role"><span class="rl">Secondary</span>${roleSel(i,'secondary',p.secondary)}</span>
+        <button class="rmname" data-ri="${i}" title="Remove ${esc(p.name)}">×</button>
+      </div>`).join('')
     : `<span class="hint">No names yet — add people below and they'll appear in every dropdown.</span>`;
 
   const staffPeople = STAFF_PEOPLE.map(([k,label])=>`
@@ -1130,7 +1189,7 @@ function renderEdit(){
         <button class="addline" id="addLine">+ Add line</button>
       </div>
       <div class="ecard" style="border-top-color:var(--edge)">
-        <div class="subhead">People / Roster <span class="hint">(these names fill every dropdown — one shared list for all days)</span></div>
+        <div class="subhead">People / Roster <span class="hint">(one shared list for all days. Set each person's Primary role and a line's positions auto-fill with the primary crew when you set it to Run 1st — skipping anyone absent, on vacation, or on a press.)</span></div>
         <div class="roster">${rosterChips}</div>
         <div class="roster-add">
           <input id="newName" placeholder="Add a person's name…">
@@ -1179,7 +1238,10 @@ document.getElementById('view').addEventListener('input', e=>{
     }
     if(t.dataset.f){
       const f=t.dataset.f; l[f]=t.value;
-      if(f==='status'){ scheduleSave(); render(); return; }        // recolor card + header
+      if(f==='status'){
+        if(t.value==='run1') autofillPrimary(l);                    // drop in the primary crew
+        scheduleSave(); render(); return;                           // recolor card + header
+      }
       if(f==='size'){
         if(t.value && !l.status) l.status='run1';                  // picked a size → assume running
         else if(!t.value) l.status='';                             // cleared size → idle
@@ -1192,6 +1254,11 @@ document.getElementById('view').addEventListener('input', e=>{
       scheduleSave();
       return;
     }
+  }
+  if(t.dataset.roleidx!==undefined && t.dataset.rolefield){      // roster Primary/Secondary role
+    const i=+t.dataset.roleidx, f=t.dataset.rolefield;
+    if(roster[i]){ roster[i][f]=t.value; saveRoster(); }
+    return;
   }
   if(t.dataset.staffp!==undefined && t.dataset.i!==undefined){   // absent / vacation person
     const key=t.dataset.staffp, i=+t.dataset.i;
@@ -1241,7 +1308,7 @@ document.getElementById('view').addEventListener('keydown', e=>{
 /* Normalize a calendar name to the roster's spelling when it matches (case-insensitive),
    so calendar entries line up with the dropdowns. */
 function matchRoster(names){
-  return (names||[]).map(n=>{ const hit=roster.find(r=>r.toLowerCase()===String(n).toLowerCase()); return hit||n; });
+  return (names||[]).map(n=>{ const hit=roster.find(r=>r.name.toLowerCase()===String(n).toLowerCase()); return hit?hit.name:n; });
 }
 /* Pull today's Absent / Vacation people from the shared Google Calendar (via the Worker)
    and merge them into this day's lists — existing manual entries are kept. */
