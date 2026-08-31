@@ -404,7 +404,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v48';
+var APP_VERSION = 'v49';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -460,8 +460,17 @@ const ROLE_CATALOG = [
   {v:"na",              label:"N/A",              pos:null}
 ];
 const ROLE_BY_V = Object.fromEntries(ROLE_CATALOG.map(r=>[r.v,r]));
+const ROLE_BY_LABEL = Object.fromEntries(ROLE_CATALOG.map(r=>[r.label.toLowerCase(), r.v]));
 function roleLabel(v){ return (ROLE_BY_V[v]||{}).label || ''; }
 function rolePos(v){ return (ROLE_BY_V[v]||{}).pos || null; }
+/* Accept either the internal value ("doubleSeamer") or the sheet label ("Double
+   Seamer") and return the canonical value — so the roster Sheet stays human
+   readable and hand-edits with plain labels still work. */
+function roleVal(x){ const s=String(x||'').trim(); if(!s) return ''; if(ROLE_BY_V[s]) return s; return ROLE_BY_LABEL[s.toLowerCase()]||''; }
+const POS_BY_KEY   = Object.fromEntries(OP_ROLES.map(([k,l])=>[k,l]));
+const POS_BY_LABEL = Object.fromEntries(OP_ROLES.map(([k,l])=>[l.toLowerCase(),k]));
+function posVal(x){ const s=String(x||'').trim(); if(!s) return ''; if(POS_BY_KEY[s]) return s; return POS_BY_LABEL[s.toLowerCase()]||''; }
+function posLabel(k){ return POS_BY_KEY[k]||''; }
 const MAX_PER_POS = 3;
 const MAX_JOBS = 4;     // a line can run several products/customers at the same size
 
@@ -732,18 +741,17 @@ function updateSaveChip(){
 const MAX_EXC = 2;   // a person can carry up to two auto-fill exceptions
 function normalizeRoster(v){
   if(!Array.isArray(v)) return [];
-  const roleOk=r=> ROLE_BY_V[r] ? r : '';
-  const posOk =r=> OP_ROLES.some(([k])=>k===r) ? r : '';
   const excOk=arr=> (Array.isArray(arr)?arr:[]).slice(0,MAX_EXC).map(e=>({
-    line:String((e&&e.line)!=null?e.line:'').trim(), pos:posOk(e&&e.pos||'')
+    line:String((e&&e.line)!=null?e.line:'').trim(), pos:posVal(e&&e.pos||'')
   }));
   const seen=new Set(), out=[];
   v.forEach(item=>{
     const o = (item && typeof item==='object') ? item : {name:item};
     const name=String(o.name==null?'':o.name).trim(); if(!name) return;
+    if(name.toLowerCase()==='[object object]') return;        // purge old corrupted rows
     const key=name.toLowerCase(); if(seen.has(key)) return; seen.add(key);
-    out.push({name, primary:roleOk(o.primary||''), secondary:roleOk(o.secondary||''),
-      tertiary:roleOk(o.tertiary||''), exceptions:excOk(o.exceptions)});
+    out.push({name, primary:roleVal(o.primary), secondary:roleVal(o.secondary),
+      tertiary:roleVal(o.tertiary), exceptions:excOk(o.exceptions)});
   });
   return out;
 }
@@ -755,7 +763,14 @@ function rosterAdd(name){
 }
 function rosterRemove(i){ if(i>=0 && i<roster.length){ roster.splice(i,1); saveRoster(); } }
 async function saveRoster(){
-  try{ await Store.setRoster(roster); }
+  // Send human-readable labels so the roster Sheet stays legible (Name, Primary
+  // Role, …). Values map back to internal keys on load via roleVal/posVal.
+  const payload = roster.map(p=>({
+    name:p.name,
+    primary:roleLabel(p.primary), secondary:roleLabel(p.secondary), tertiary:roleLabel(p.tertiary),
+    exceptions:(p.exceptions||[]).slice(0,MAX_EXC).map(e=>({line:String(e.line||''), pos:posLabel(e.pos)}))
+  }));
+  try{ await Store.setRoster(payload); }
   catch(e){ alert('Could not save the roster: '+(e && e.message ? e.message : e)); }
 }
 

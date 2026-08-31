@@ -5,8 +5,10 @@
  * directly with a service account (no Apps Script). The browser POSTs {fn, args} here.
  *
  * Two tabs are used (auto-created on first run if missing):
- *   Roster  — the dropdown data. Column A = names, one per row (header "Name" in A1).
- *             Edit it in the sheet and the app picks the names up.
+ *   Roster  — the people, one per row. Columns:
+ *               A Name | B Primary Role | C Secondary Role | D Tertiary Role |
+ *               E Exception 1 Line | F Exception 1 Position | G Exception 2 Line | H Exception 2 Position
+ *             Edit it in the sheet and the app picks the names/roles up.
  *   Boards  — the saved day, one row per date:
  *               A Date | B Lines Running | C Change-Overs | D Absent | E Vacation |
  *               F Updated | G Board JSON
@@ -20,8 +22,8 @@
  *   API_TOKEN           (secret)  optional shared token; if set, the client must send it
  *
  * Contract (POST {fn, args}):
- *   getRoster()          -> ["A. Cruz", ...]
- *   setRoster([names])   -> true
+ *   getRoster()          -> [{name, primary, secondary, tertiary, exceptions:[{line,pos}]}, ...]
+ *   setRoster([people])  -> true
  *   getBoard(key)        -> board JSON | null      (key is "board:YYYY-MM-DD" or the date)
  *   setBoard(key, board) -> true
  *   listBoards()         -> ["2026-08-20", ...]
@@ -114,15 +116,52 @@ async function handle(fn, args, env) {
 }
 
 // ---------------- backend functions ----------------
+// Roster columns: Name | Primary | Secondary | Tertiary | Exc1 Line | Exc1 Pos | Exc2 Line | Exc2 Pos
+const ROSTER_HEADER = ['Name', 'Primary Role', 'Secondary Role', 'Tertiary Role',
+  'Exception 1 Line', 'Exception 1 Position', 'Exception 2 Line', 'Exception 2 Position'];
+
 async function getRoster(sheets) {
-  const rows = await sheets.values(ROSTER_TAB + '!A2:A100000');
-  return rows.map((r) => String(r[0] || '').trim()).filter(Boolean);
+  const rows = await sheets.values(ROSTER_TAB + '!A2:H100000');
+  const out = [];
+  for (const r of rows) {
+    const name = String((r && r[0]) || '').trim();
+    if (!name) continue;
+    const exc = [];
+    const e1l = String((r[4]) || '').trim(), e1p = String((r[5]) || '').trim();
+    const e2l = String((r[6]) || '').trim(), e2p = String((r[7]) || '').trim();
+    if (e1l || e1p) exc.push({ line: e1l, pos: e1p });
+    if (e2l || e2p) exc.push({ line: e2l, pos: e2p });
+    out.push({
+      name,
+      primary: String(r[1] || '').trim(),
+      secondary: String(r[2] || '').trim(),
+      tertiary: String(r[3] || '').trim(),
+      exceptions: exc,
+    });
+  }
+  return out;
 }
 
 async function setRoster(sheets, list) {
-  const clean = (Array.isArray(list) ? list : []).map((n) => String(n == null ? '' : n).trim()).filter(Boolean).slice(0, 2000);
-  await sheets.clear(ROSTER_TAB + '!A2:A100000');
-  if (clean.length) await sheets.update(ROSTER_TAB + '!A2', clean.map((n) => [n]));
+  const rows = (Array.isArray(list) ? list : []).map((p) => {
+    const o = (p && typeof p === 'object') ? p : { name: p };   // tolerate a bare-string legacy entry
+    const name = String(o.name == null ? '' : o.name).trim();
+    if (!name || name.toLowerCase() === '[object object]') return null;
+    const ex = Array.isArray(o.exceptions) ? o.exceptions : [];
+    const e0 = ex[0] || {}, e1 = ex[1] || {};
+    return [
+      name,
+      String(o.primary || '').trim(), String(o.secondary || '').trim(), String(o.tertiary || '').trim(),
+      String(e0.line || '').trim(), String(e0.pos || '').trim(),
+      String(e1.line || '').trim(), String(e1.pos || '').trim(),
+    ];
+  }).filter(Boolean).slice(0, 2000);
+  // Keep the sheet self-describing.
+  await sheets.update(ROSTER_TAB + '!A1', [ROSTER_HEADER]);
+  // Write the data FIRST, then clear only the rows BELOW it. The old code cleared
+  // before writing, so a mid-write failure wiped the whole roster.
+  if (rows.length) await sheets.update(ROSTER_TAB + '!A2', rows);
+  await sheets.clear(ROSTER_TAB + '!A' + (rows.length + 2) + ':H100000');
   return true;
 }
 
@@ -353,7 +392,7 @@ async function ensureSetup(sheets) {
   if (!titles.includes(BOARDS_TAB)) toAdd.push(BOARDS_TAB);
   if (toAdd.length) {
     await sheets.addTabs(toAdd);
-    if (toAdd.includes(ROSTER_TAB)) await sheets.update(ROSTER_TAB + '!A1', [['Name']]);
+    if (toAdd.includes(ROSTER_TAB)) await sheets.update(ROSTER_TAB + '!A1', [ROSTER_HEADER]);
     if (toAdd.includes(BOARDS_TAB)) await sheets.update(BOARDS_TAB + '!A1:G1', [BOARDS_HEADER]);
   }
   setupDone = true;
