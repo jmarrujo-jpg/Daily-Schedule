@@ -244,6 +244,14 @@
   .cautions ul{list-style:none;display:flex;flex-direction:column;gap:5px}
   .cautions li{font-size:14px;color:var(--text);line-height:1.35}
   .cautions li b{font-family:var(--disp);font-weight:700}
+  /* exception-violation banner (edit view only) — someone placed where they're excepted */
+  .excs{background:rgba(239,68,68,.10);border:1px solid var(--red);border-radius:8px;padding:10px 15px;margin-bottom:12px}
+  .excs-h{font-family:var(--disp);font-weight:800;font-size:14px;letter-spacing:.04em;color:var(--red);margin-bottom:5px}
+  .excs ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+  .excs li{font-size:14px;color:var(--text);line-height:1.35}
+  .excs li b{font-family:var(--disp);font-weight:700}
+  /* a position field holding someone excepted from it — dashed red flag */
+  select.exc-field{border:2px dashed var(--red) !important;background:rgba(239,68,68,.10) !important}
 
   /* announcement banner — bright, high-contrast, impossible to miss on the floor */
   .announce{display:flex;align-items:center;gap:16px;margin-bottom:12px;padding:14px 20px;border-radius:12px;
@@ -277,11 +285,23 @@
     display:flex;flex-direction:column;gap:7px}
   .rmember-top{display:flex;align-items:center;gap:10px}
   .rmember-name{font-family:var(--disp);font-weight:700;font-size:16px;flex:1}
-  .rmember-roles,.rmember-excs{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .rmember-roles{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .rmember-excs{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
   .rmember-role{display:inline-flex;align-items:center;gap:6px}
   .rmember .rl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700}
   .rmember-excs .rl{color:var(--amber-d)}
-  .rmember-exc{display:inline-flex;gap:5px}
+  .exc-entry{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--panel);
+    border:1px solid var(--edge);border-radius:6px;padding:6px 8px}
+  .exc-arrow{color:var(--dim);font-weight:700}
+  .exc-chips{display:inline-flex;gap:5px;flex-wrap:wrap}
+  .excchip{padding:5px 9px;font-size:12px}
+  .excchip.on{background:rgba(239,68,68,.16);border-color:var(--red);color:var(--red)}
+  .excchip:hover{border-color:var(--red)}
+  .exc-rm{background:transparent;border:none;color:var(--dim);font-size:16px;line-height:.9;cursor:pointer;padding:0 4px}
+  .exc-rm:hover{color:var(--red)}
+  .exc-add{align-self:flex-start;background:transparent;border:1px dashed var(--edge2);color:var(--muted);
+    border-radius:5px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer}
+  .exc-add:hover{border-color:var(--amber);color:var(--text)}
   .rmember select{background:var(--panel);color:var(--text);border:1px solid var(--edge2);
     border-radius:5px;padding:5px 7px;font-size:13px}
   .rmember .rmname{background:transparent;border:none;color:var(--dim);font-size:19px;line-height:.9;
@@ -404,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v49';
+var APP_VERSION = 'v50';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -471,6 +491,36 @@ const POS_BY_KEY   = Object.fromEntries(OP_ROLES.map(([k,l])=>[k,l]));
 const POS_BY_LABEL = Object.fromEntries(OP_ROLES.map(([k,l])=>[l.toLowerCase(),k]));
 function posVal(x){ const s=String(x||'').trim(); if(!s) return ''; if(POS_BY_KEY[s]) return s; return POS_BY_LABEL[s.toLowerCase()]||''; }
 function posLabel(k){ return POS_BY_KEY[k]||''; }
+/* Exceptions: a list of { line, positions[] }. line '' means ALL lines. Stored
+   in the sheet as one readable string, e.g.
+     "All lines: Palletizer ; Line 6: Double Seamer, Palletizer"
+   Encode for saving, decode from either that string or a structured array
+   (localStorage / older {line,pos} rows). */
+const MAX_EXC = 20;
+function encodeExceptions(list){
+  return (Array.isArray(list)?list:[]).map(e=>{
+    const pos=(e&&e.positions||[]).map(posLabel).filter(Boolean);
+    if(!pos.length) return '';
+    return (e.line ? ('Line '+e.line) : 'All lines') + ': ' + pos.join(', ');
+  }).filter(Boolean).join(' ; ');
+}
+function decodeExceptions(x){
+  const norm=(line,poss)=>{ const positions=[...new Set((poss||[]).map(posVal).filter(Boolean))];
+    return positions.length ? {line:String(line||'').trim(), positions} : null; };
+  if(Array.isArray(x)){
+    return x.map(e=>{ if(!e) return null;
+      const poss = Array.isArray(e.positions) ? e.positions : (e.pos!=null ? [e.pos] : []);
+      return norm(e.line, poss); }).filter(Boolean).slice(0,MAX_EXC);
+  }
+  const s=String(x||'').trim(); if(!s) return [];
+  return s.split(';').map(part=>{
+    const seg=part.trim(); const idx=seg.indexOf(':'); if(idx<0) return null;
+    const where=seg.slice(0,idx).trim(), rest=seg.slice(idx+1);
+    const m=where.match(/(\d+)/);
+    const line = /all/i.test(where) ? '' : (m?m[1]:'');
+    return norm(line, rest.split(',').map(t=>t.trim()));
+  }).filter(Boolean).slice(0,MAX_EXC);
+}
 const MAX_PER_POS = 3;
 const MAX_JOBS = 4;     // a line can run several products/customers at the same size
 
@@ -738,12 +788,8 @@ function updateSaveChip(){
 /* ---- Roster (people) ---- */
 /* Roster entries carry a Primary and Secondary role (an OP_ROLES key, or '').
    Older saves were a plain list of name strings — accept those and upgrade. */
-const MAX_EXC = 2;   // a person can carry up to two auto-fill exceptions
 function normalizeRoster(v){
   if(!Array.isArray(v)) return [];
-  const excOk=arr=> (Array.isArray(arr)?arr:[]).slice(0,MAX_EXC).map(e=>({
-    line:String((e&&e.line)!=null?e.line:'').trim(), pos:posVal(e&&e.pos||'')
-  }));
   const seen=new Set(), out=[];
   v.forEach(item=>{
     const o = (item && typeof item==='object') ? item : {name:item};
@@ -751,11 +797,12 @@ function normalizeRoster(v){
     if(name.toLowerCase()==='[object object]') return;        // purge old corrupted rows
     const key=name.toLowerCase(); if(seen.has(key)) return; seen.add(key);
     out.push({name, primary:roleVal(o.primary), secondary:roleVal(o.secondary),
-      tertiary:roleVal(o.tertiary), exceptions:excOk(o.exceptions)});
+      tertiary:roleVal(o.tertiary), exceptions:decodeExceptions(o.exceptions)});
   });
   return out;
 }
 function rosterNames(){ return roster.map(p=>p.name); }
+function rosterEntry(name){ const k=String(name||'').trim().toLowerCase(); return roster.find(p=>p.name.toLowerCase()===k)||null; }
 function rosterAdd(name){
   name=(name||'').trim(); if(!name) return false;
   if(roster.some(p=>p.name.toLowerCase()===name.toLowerCase())) return true;  // already there
@@ -768,7 +815,7 @@ async function saveRoster(){
   const payload = roster.map(p=>({
     name:p.name,
     primary:roleLabel(p.primary), secondary:roleLabel(p.secondary), tertiary:roleLabel(p.tertiary),
-    exceptions:(p.exceptions||[]).slice(0,MAX_EXC).map(e=>({line:String(e.line||''), pos:posLabel(e.pos)}))
+    exceptions:encodeExceptions(p.exceptions)
   }));
   try{ await Store.setRoster(payload); }
   catch(e){ alert('Could not save the roster: '+(e && e.message ? e.message : e)); }
@@ -863,6 +910,13 @@ function conflictBannerHTML(includeCaution){
       <ul>${cautions.map(c=>`<li><b>${esc(c.name)}</b> ${esc(c.msg)}</li>`).join('')}</ul>
     </div>`;
   }
+  const excs = includeCaution ? exceptionViolations() : [];
+  if(excs.length){
+    html += `<div class="excs">
+      <div class="excs-h">⛔ ${excs.length} placed on an exception</div>
+      <ul>${excs.map(e=>`<li><b>${esc(e.name)}</b> is on <b>Line ${esc(e.lineNo)} · ${esc(e.label)}</b>, which is set as an exception for them</li>`).join('')}</ul>
+    </div>`;
+  }
   return html;
 }
 /* Names currently flagged, split by severity — used to color the edit fields.
@@ -892,10 +946,13 @@ function refreshConflicts(){
   const box=document.getElementById('conflictBox');
   if(box) box.innerHTML=conflictBannerHTML(mode==='edit');
   if(mode==='edit'){
+    const excSet=new Set(exceptionViolations().map(e=>e.lineIdx+'|'+e.posKey+'|'+e.slot));
     document.querySelectorAll('#view select[data-op],#view select[data-staffp],#view select[data-pressrow]').forEach(sel=>{
       const v=(sel.value||'').trim().toLowerCase();
       sel.classList.toggle('conflict', !!v && CFLICT_SET.has(v));
       sel.classList.toggle('caution', !!v && !CFLICT_SET.has(v) && CAUTION_SET.has(v));
+      const exKey = sel.dataset.op!==undefined ? (sel.dataset.line+'|'+sel.dataset.op+'|'+sel.dataset.i) : null;
+      sel.classList.toggle('exc-field', !!(exKey && excSet.has(exKey)));
     });
   }
 }
@@ -920,9 +977,29 @@ function posTier(p, posKey){
   for(let t=0;t<roles.length;t++){ if(rolePos(roles[t])===posKey) return t+1; }
   return 0;
 }
-/* True when this person has an exception blocking them from posKey on this line. */
+/* True when this person has an exception blocking them from posKey on this line.
+   An exception with line '' applies to every line ("across the board"). */
 function excBlocks(p, lineNo, posKey){
-  return (p.exceptions||[]).some(e=> e && String(e.line).trim()===String(lineNo).trim() && e.pos===posKey);
+  return (p&&p.exceptions||[]).some(e=> e && (e.line==='' || String(e.line)===String(lineNo).trim())
+    && (e.positions||[]).includes(posKey));
+}
+/* Every place on the board where someone is sitting in a position they're
+   excepted from (running lines only — idle lines aren't staffed on the board).
+   Feeds the edit-view warning banner and the field marking. */
+function exceptionViolations(){
+  const out=[];
+  board.lines.forEach((l,idx)=>{
+    if(l.hidden || statusOf(l)==='') return;
+    const lineNo=String(l.lineNo||'').trim();
+    OP_ROLES.forEach(([posKey,label])=>{
+      opArr(l,posKey).forEach((n,i)=>{
+        const name=String(n||'').trim(); if(!name) return;
+        const p=rosterEntry(name); if(!p) return;
+        if(excBlocks(p, lineNo, posKey)) out.push({name, lineIdx:idx, lineNo, posKey, label, slot:i});
+      });
+    });
+  });
+  return out;
 }
 /* Fill a line's positions from the roster roles, best-available-by-rank. For
    each position, gather available people (not off / not on a press / not
@@ -1268,21 +1345,27 @@ function rosterEditorHTML(){
     ROLE_CATALOG.forEach(r=>{ o+=`<option value="${r.v}" ${r.v===cur?'selected':''}>${esc(r.label)}</option>`; });
     return `<select data-roleidx="${i}" data-rolefield="${field}">${o}</select>`;
   };
-  const excLineSel=(i,si,cur)=>{
-    let o=`<option value="">— line —</option>`;
+  const excLineSel=(i,j,cur)=>{
+    let o=`<option value="">All lines</option>`;
     const list=uniqLineNos.slice(); if(cur && !list.includes(cur)) list.push(cur);
     list.forEach(n=>{ o+=`<option value="${esc(n)}" ${n===cur?'selected':''}>Line ${esc(n)}</option>`; });
-    return `<select data-exidx="${i}" data-exslot="${si}" data-exfield="line">${o}</select>`;
+    return `<select data-exidx="${i}" data-exentry="${j}" data-exfield="line">${o}</select>`;
   };
-  const excPosSel=(i,si,cur)=>{
-    let o=`<option value="">— position —</option>`;
-    OP_ROLES.forEach(([k,label])=>{ o+=`<option value="${k}" ${k===cur?'selected':''}>${esc(label)}</option>`; });
-    return `<select data-exidx="${i}" data-exslot="${si}" data-exfield="pos">${o}</select>`;
+  const excEntry=(i,j,e)=>{
+    const chips=OP_ROLES.map(([k,label])=>{
+      const on=(e.positions||[]).includes(k);
+      return `<button class="palchip excchip${on?' on':''}" data-exidx="${i}" data-exentry="${j}" data-expos="${k}">${esc(label)}</button>`;
+    }).join('');
+    return `<div class="exc-entry">
+      ${excLineSel(i,j,e.line)}
+      <span class="exc-arrow">→</span>
+      <span class="exc-chips">${chips}</span>
+      <button class="exc-rm" data-exrm-person="${i}" data-exrm-entry="${j}" title="Remove this exception">×</button>
+    </div>`;
   };
   const rows = roster.length
     ? roster.map((p,i)=>{
-        const ex=[0,1].map(si=>{ const e=(p.exceptions&&p.exceptions[si])||{line:'',pos:''};
-          return `<span class="rmember-exc">${excLineSel(i,si,e.line)}${excPosSel(i,si,e.pos)}</span>`; }).join('');
+        const excs=(p.exceptions||[]).map((e,j)=>excEntry(i,j,e)).join('');
         return `<div class="rmember">
           <div class="rmember-top">
             <span class="rmember-name">${esc(p.name)}</span>
@@ -1293,7 +1376,11 @@ function rosterEditorHTML(){
             <span class="rmember-role"><span class="rl">2nd</span>${roleSel(i,'secondary',p.secondary)}</span>
             <span class="rmember-role"><span class="rl">3rd</span>${roleSel(i,'tertiary',p.tertiary)}</span>
           </div>
-          <div class="rmember-excs"><span class="rl">Don’t auto-fill on</span>${ex}</div>
+          <div class="rmember-excs">
+            <span class="rl">Don’t auto-fill</span>
+            ${excs}
+            <button class="exc-add" data-exadd="${i}">＋ add exception</button>
+          </div>
         </div>`;
       }).join('')
     : `<span class="hint">No names yet — add people below and they'll appear in every dropdown.</span>`;
@@ -1377,14 +1464,9 @@ document.getElementById('view').addEventListener('input', e=>{
     if(roster[i]){ roster[i][f]=t.value; saveRoster(); }
     return;
   }
-  if(t.dataset.exidx!==undefined && t.dataset.exslot!==undefined && t.dataset.exfield){  // auto-fill exception
-    const pi=+t.dataset.exidx, si=+t.dataset.exslot, f=t.dataset.exfield, p=roster[pi];
-    if(p){
-      if(!Array.isArray(p.exceptions)) p.exceptions=[];
-      while(p.exceptions.length<=si) p.exceptions.push({line:'',pos:''});
-      p.exceptions[si][f]=t.value;
-      saveRoster();
-    }
+  if(t.dataset.exidx!==undefined && t.dataset.exentry!==undefined && t.dataset.exfield==='line'){  // exception line
+    const pi=+t.dataset.exidx, j=+t.dataset.exentry, p=roster[pi];
+    if(p && p.exceptions && p.exceptions[j]){ p.exceptions[j].line=t.value; saveRoster(); }
     return;
   }
   if(t.dataset.staffp!==undefined && t.dataset.i!==undefined){   // absent / vacation person
@@ -1468,6 +1550,20 @@ document.getElementById('view').addEventListener('click', async e=>{
   else if(t.id==='editRoster'){ mode='roster'; render(); }
   else if(t.id==='backToEdit'){ mode='edit'; render(); }
   else if(t.dataset.ri!==undefined){ rosterRemove(+t.dataset.ri); render(); }
+  else if(t.dataset.exadd!==undefined){                          // add an exception entry
+    const p=roster[+t.dataset.exadd];
+    if(p){ if(!Array.isArray(p.exceptions)) p.exceptions=[]; p.exceptions.push({line:'',positions:[]}); saveRoster(); render(); }
+  }
+  else if(t.dataset.exrmPerson!==undefined && t.dataset.exrmEntry!==undefined){  // remove an exception entry
+    const p=roster[+t.dataset.exrmPerson];
+    if(p && p.exceptions){ p.exceptions.splice(+t.dataset.exrmEntry,1); saveRoster(); render(); }
+  }
+  else if(t.dataset.expos!==undefined && t.dataset.exidx!==undefined && t.dataset.exentry!==undefined){  // toggle a position in an exception
+    const p=roster[+t.dataset.exidx], e=p&&p.exceptions&&p.exceptions[+t.dataset.exentry], k=t.dataset.expos;
+    if(e){ if(!Array.isArray(e.positions)) e.positions=[];
+      const at=e.positions.indexOf(k); if(at>=0) e.positions.splice(at,1); else e.positions.push(k);
+      saveRoster(); render(); }
+  }
   else if(t.dataset.addop!==undefined){                          // add a person to a position
     const idx=+t.dataset.line, k=t.dataset.addop, arr=board.lines[idx].ops[k];
     if(Array.isArray(arr) && arr.length<MAX_PER_POS){ arr.push(""); scheduleSave(); render(); }

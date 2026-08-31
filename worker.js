@@ -6,8 +6,9 @@
  *
  * Two tabs are used (auto-created on first run if missing):
  *   Roster  — the people, one per row. Columns:
- *               A Name | B Primary Role | C Secondary Role | D Tertiary Role |
- *               E Exception 1 Line | F Exception 1 Position | G Exception 2 Line | H Exception 2 Position
+ *               A Name | B Primary Role | C Secondary Role | D Tertiary Role | E Exceptions
+ *             Exceptions is one readable string, e.g.
+ *               "All lines: Palletizer ; Line 6: Double Seamer, Palletizer"
  *             Edit it in the sheet and the app picks the names/roles up.
  *   Boards  — the saved day, one row per date:
  *               A Date | B Lines Running | C Change-Overs | D Absent | E Vacation |
@@ -116,27 +117,22 @@ async function handle(fn, args, env) {
 }
 
 // ---------------- backend functions ----------------
-// Roster columns: Name | Primary | Secondary | Tertiary | Exc1 Line | Exc1 Pos | Exc2 Line | Exc2 Pos
-const ROSTER_HEADER = ['Name', 'Primary Role', 'Secondary Role', 'Tertiary Role',
-  'Exception 1 Line', 'Exception 1 Position', 'Exception 2 Line', 'Exception 2 Position'];
+// Roster columns: Name | Primary Role | Secondary Role | Tertiary Role | Exceptions
+// Exceptions is one readable string, e.g. "All lines: Palletizer ; Line 6: Double Seamer".
+const ROSTER_HEADER = ['Name', 'Primary Role', 'Secondary Role', 'Tertiary Role', 'Exceptions'];
 
 async function getRoster(sheets) {
-  const rows = await sheets.values(ROSTER_TAB + '!A2:H100000');
+  const rows = await sheets.values(ROSTER_TAB + '!A2:E100000');
   const out = [];
   for (const r of rows) {
     const name = String((r && r[0]) || '').trim();
     if (!name) continue;
-    const exc = [];
-    const e1l = String((r[4]) || '').trim(), e1p = String((r[5]) || '').trim();
-    const e2l = String((r[6]) || '').trim(), e2p = String((r[7]) || '').trim();
-    if (e1l || e1p) exc.push({ line: e1l, pos: e1p });
-    if (e2l || e2p) exc.push({ line: e2l, pos: e2p });
     out.push({
       name,
       primary: String(r[1] || '').trim(),
       secondary: String(r[2] || '').trim(),
       tertiary: String(r[3] || '').trim(),
-      exceptions: exc,
+      exceptions: String(r[4] || '').trim(),   // raw text; the app parses it
     });
   }
   return out;
@@ -147,13 +143,10 @@ async function setRoster(sheets, list) {
     const o = (p && typeof p === 'object') ? p : { name: p };   // tolerate a bare-string legacy entry
     const name = String(o.name == null ? '' : o.name).trim();
     if (!name || name.toLowerCase() === '[object object]') return null;
-    const ex = Array.isArray(o.exceptions) ? o.exceptions : [];
-    const e0 = ex[0] || {}, e1 = ex[1] || {};
     return [
       name,
       String(o.primary || '').trim(), String(o.secondary || '').trim(), String(o.tertiary || '').trim(),
-      String(e0.line || '').trim(), String(e0.pos || '').trim(),
-      String(e1.line || '').trim(), String(e1.pos || '').trim(),
+      String(o.exceptions == null ? '' : o.exceptions).trim(),
     ];
   }).filter(Boolean).slice(0, 2000);
   // Keep the sheet self-describing.
@@ -161,7 +154,7 @@ async function setRoster(sheets, list) {
   // Write the data FIRST, then clear only the rows BELOW it. The old code cleared
   // before writing, so a mid-write failure wiped the whole roster.
   if (rows.length) await sheets.update(ROSTER_TAB + '!A2', rows);
-  await sheets.clear(ROSTER_TAB + '!A' + (rows.length + 2) + ':H100000');
+  await sheets.clear(ROSTER_TAB + '!A' + (rows.length + 2) + ':E100000');
   return true;
 }
 
