@@ -384,7 +384,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v44';
+var APP_VERSION = 'v45';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -484,6 +484,7 @@ let curDate = todayStr();
 let board = null;
 let roster = [];   // list of people's names — fills the position / absent / vacation dropdowns
 let saveTimer = null, saving = false, saveError = null, loadError = null;
+let recoverTimer = null;   // retry handle for auto-recovering from a failed load
 let daySaved = false;      // true when the day being viewed exists as a saved board (for slip lookup)
 let lastBoardSig = null;   // last board we've seen from storage — used to skip needless re-renders
 let lastSyncAt = null;     // when the display last confirmed it's in sync with the server
@@ -658,6 +659,7 @@ async function loadBoard(date){
   board.date = date;
   lastBoardSig = boardSig(board);   // baseline: the display won't re-render until this changes
   lastSyncAt = Date.now();
+  if(loadError) scheduleRecovery(); else clearTimeout(recoverTimer);
 }
 function scheduleSave(){
   refreshConflicts();      // keep the conflict banner live as fields change
@@ -1402,6 +1404,7 @@ let polling=false;
    Refresh button) but still respects edit-mode / already-in-flight guards. */
 async function pollBoard(manual){
   if(polling) return;
+  if(loadError) return;   // in an error state — the recovery loop owns retries, not the poll
   if(!manual && (mode!=='board' || saving || document.hidden)) return;
   if(mode!=='board' || saving) return;
   polling=true;
@@ -1429,8 +1432,27 @@ function scheduleSync(){
   if(w) pollBoard(false);
   syncTimer=setTimeout(scheduleSync, w ? w.every : 5*60*1000);
 }
-/* Manual refresh: always allowed, exactly one call, ignores the schedule. */
-function manualRefresh(){ pollBoard(true); }
+/* Full reload of the current day (fetch + repaint). Used to recover from a
+   failed load — unlike pollBoard it re-runs loadBoard, so it clears loadError,
+   re-enables saving, and refreshes the footer banner via a full render(). */
+async function reloadDay(){ await loadBoard(curDate); render(); }
+/* Auto-recover from a transient load failure. A network/Worker blip leaves the
+   board showing a blank "could not reach the server" day; keep quietly retrying
+   so a display heals itself instead of sitting on the error. Board view only —
+   in edit mode we leave the manual retry so no in-progress typing is discarded. */
+function scheduleRecovery(){
+  clearTimeout(recoverTimer);
+  if(!loadError) return;
+  recoverTimer=setTimeout(async()=>{
+    if(!loadError) return;
+    if(mode!=='board' || saving){ scheduleRecovery(); return; }   // wait; try again shortly
+    await reloadDay();
+    if(loadError) scheduleRecovery();   // still down — keep trying
+  }, 8000);
+}
+/* Manual refresh: always allowed, exactly one call, ignores the schedule.
+   If we're stuck on a load error, do a full reload so Refresh actually recovers. */
+function manualRefresh(){ if(loadError) reloadDay(); else pollBoard(true); }
 const rb=document.getElementById('refreshBtn'); if(rb) rb.onclick=manualRefresh;
 
 /* Wake / focus recovery. When a PC sleeps, JS timers freeze and the page can
