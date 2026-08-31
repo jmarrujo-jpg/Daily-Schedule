@@ -384,7 +384,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v43';
+var APP_VERSION = 'v44';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1434,14 +1434,17 @@ function manualRefresh(){ pollBoard(true); }
 const rb=document.getElementById('refreshBtn'); if(rb) rb.onclick=manualRefresh;
 
 /* Wake / focus recovery. When a PC sleeps, JS timers freeze and the page can
-   come back on a stale day (still showing yesterday). On the display, if the
-   date rolled over while we were away, jump to today; either way, re-arm the
-   sync timer and pull once. Guarded by the same window rules, so it never adds
-   off-hours server calls. (The daily shutdown makes this rare, but it means a
-   display left on still heals itself instead of freezing on an old board.) */
+   come back on a stale day (still showing yesterday). On the unattended TV
+   display, if the date rolled over while we were away, jump to today; either
+   way, re-arm the sync timer and pull once. Guarded by the same window rules,
+   so it never adds off-hours server calls. (The daily shutdown makes this rare,
+   but it means a display left on still heals itself instead of freezing.)
+   The date-jump is TV-only on purpose: on a normal PC the focus you get back
+   from opening a production slip (or any other tab) must NOT yank you off the
+   past day you're viewing. */
 async function wakeCheck(){
   if(document.hidden) return;
-  if(mode==='board' && !saving){
+  if(TV_MODE && mode==='board' && !saving){
     const today=todayStr();
     if(today!==curDate){ await goDate(today); }   // overnight rollover — load today fresh
   }
