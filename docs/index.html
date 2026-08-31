@@ -289,6 +289,11 @@
   .rmember .rmname:hover{color:var(--red)}
   .roster-add{display:flex;gap:8px;max-width:440px}
   .roster-add input{flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--edge2);border-radius:5px;padding:9px 10px;font-size:15px}
+  /* Edit-Roster call-to-action button + the roster screen header */
+  .roster-cta{display:flex;justify-content:center;margin:6px 0 2px}
+  .roster-cta .btn{font-size:16px;font-weight:700;padding:12px 22px}
+  .roster-head{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+  .roster-title{font-family:var(--disp);font-weight:800;font-size:22px;letter-spacing:.03em;margin:0}
 
   /* fullscreen tweaks */
   body.fs .topbar .hide-fs{display:none}
@@ -399,7 +404,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v47';
+var APP_VERSION = 'v48';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -953,7 +958,7 @@ function render(){
       ? "Changes save automatically to this day. Same size for two customers? Add another product."
       : "Board view · updates live · press ⛶ TV for fullscreen on a display") + "   ·   " + APP_VERSION;
   }
-  if(mode==="board") renderBoard(); else renderEdit();
+  if(mode==="board") renderBoard(); else if(mode==="roster") renderRoster(); else renderEdit();
 }
 
 /* ============================ Render: BOARD (TV) ============================ */
@@ -1194,42 +1199,6 @@ function renderEdit(){
     </div>`;
   }).join('');
 
-  const uniqLineNos = [...new Set(board.lines.map(l=>String(l.lineNo||'').trim()).filter(Boolean))];
-  const roleSel=(i,field,cur)=>{
-    let o=`<option value="">—</option>`;
-    ROLE_CATALOG.forEach(r=>{ o+=`<option value="${r.v}" ${r.v===cur?'selected':''}>${esc(r.label)}</option>`; });
-    return `<select data-roleidx="${i}" data-rolefield="${field}">${o}</select>`;
-  };
-  const excLineSel=(i,si,cur)=>{
-    let o=`<option value="">— line —</option>`;
-    const list=uniqLineNos.slice(); if(cur && !list.includes(cur)) list.push(cur);
-    list.forEach(n=>{ o+=`<option value="${esc(n)}" ${n===cur?'selected':''}>Line ${esc(n)}</option>`; });
-    return `<select data-exidx="${i}" data-exslot="${si}" data-exfield="line">${o}</select>`;
-  };
-  const excPosSel=(i,si,cur)=>{
-    let o=`<option value="">— position —</option>`;
-    OP_ROLES.forEach(([k,label])=>{ o+=`<option value="${k}" ${k===cur?'selected':''}>${esc(label)}</option>`; });
-    return `<select data-exidx="${i}" data-exslot="${si}" data-exfield="pos">${o}</select>`;
-  };
-  const rosterChips = roster.length
-    ? roster.map((p,i)=>{
-        const ex=[0,1].map(si=>{ const e=(p.exceptions&&p.exceptions[si])||{line:'',pos:''};
-          return `<span class="rmember-exc">${excLineSel(i,si,e.line)}${excPosSel(i,si,e.pos)}</span>`; }).join('');
-        return `<div class="rmember">
-          <div class="rmember-top">
-            <span class="rmember-name">${esc(p.name)}</span>
-            <button class="rmname" data-ri="${i}" title="Remove ${esc(p.name)}">×</button>
-          </div>
-          <div class="rmember-roles">
-            <span class="rmember-role"><span class="rl">Primary</span>${roleSel(i,'primary',p.primary)}</span>
-            <span class="rmember-role"><span class="rl">2nd</span>${roleSel(i,'secondary',p.secondary)}</span>
-            <span class="rmember-role"><span class="rl">3rd</span>${roleSel(i,'tertiary',p.tertiary)}</span>
-          </div>
-          <div class="rmember-excs"><span class="rl">Don’t auto-fill on</span>${ex}</div>
-        </div>`;
-      }).join('')
-    : `<span class="hint">No names yet — add people below and they'll appear in every dropdown.</span>`;
-
   const staffPeople = STAFF_PEOPLE.map(([k,label])=>`
     <div class="fld"><label>${label} — pick people</label>${staffPeopleInputs(k)}</div>`).join('');
   const staffText = STAFF_TEXT.map(([k,label])=>`
@@ -1268,17 +1237,70 @@ function renderEdit(){
       <div class="edit-lines">${lineCards}
         <button class="addline" id="addLine">+ Add line</button>
       </div>
-      <div class="ecard" style="border-top-color:var(--edge)">
-        <div class="subhead">People / Roster <span class="hint">(one shared list for all days. Set each person's Primary role and a line's positions auto-fill with the primary crew when you set it to Run 1st — skipping anyone absent, on vacation, or on a press.)</span></div>
-        <div class="roster">${rosterChips}</div>
-        <div class="roster-add">
-          <input id="newName" placeholder="Add a person's name…">
-          <button class="btn" id="addName">Add</button>
-        </div>
+      <div class="roster-cta">
+        <button class="btn" id="editRoster">👥 Edit Roster — add / remove people &amp; roles</button>
       </div>
     </div>`;
   updateSaveChip();
   refreshConflicts();     // apply the red field highlights
+}
+
+/* The People / Roster editor markup — its own screen (the Edit Roster button). */
+function rosterEditorHTML(){
+  const uniqLineNos = [...new Set(board.lines.map(l=>String(l.lineNo||'').trim()).filter(Boolean))];
+  const roleSel=(i,field,cur)=>{
+    let o=`<option value="">—</option>`;
+    ROLE_CATALOG.forEach(r=>{ o+=`<option value="${r.v}" ${r.v===cur?'selected':''}>${esc(r.label)}</option>`; });
+    return `<select data-roleidx="${i}" data-rolefield="${field}">${o}</select>`;
+  };
+  const excLineSel=(i,si,cur)=>{
+    let o=`<option value="">— line —</option>`;
+    const list=uniqLineNos.slice(); if(cur && !list.includes(cur)) list.push(cur);
+    list.forEach(n=>{ o+=`<option value="${esc(n)}" ${n===cur?'selected':''}>Line ${esc(n)}</option>`; });
+    return `<select data-exidx="${i}" data-exslot="${si}" data-exfield="line">${o}</select>`;
+  };
+  const excPosSel=(i,si,cur)=>{
+    let o=`<option value="">— position —</option>`;
+    OP_ROLES.forEach(([k,label])=>{ o+=`<option value="${k}" ${k===cur?'selected':''}>${esc(label)}</option>`; });
+    return `<select data-exidx="${i}" data-exslot="${si}" data-exfield="pos">${o}</select>`;
+  };
+  const rows = roster.length
+    ? roster.map((p,i)=>{
+        const ex=[0,1].map(si=>{ const e=(p.exceptions&&p.exceptions[si])||{line:'',pos:''};
+          return `<span class="rmember-exc">${excLineSel(i,si,e.line)}${excPosSel(i,si,e.pos)}</span>`; }).join('');
+        return `<div class="rmember">
+          <div class="rmember-top">
+            <span class="rmember-name">${esc(p.name)}</span>
+            <button class="rmname" data-ri="${i}" title="Remove ${esc(p.name)}">×</button>
+          </div>
+          <div class="rmember-roles">
+            <span class="rmember-role"><span class="rl">Primary</span>${roleSel(i,'primary',p.primary)}</span>
+            <span class="rmember-role"><span class="rl">2nd</span>${roleSel(i,'secondary',p.secondary)}</span>
+            <span class="rmember-role"><span class="rl">3rd</span>${roleSel(i,'tertiary',p.tertiary)}</span>
+          </div>
+          <div class="rmember-excs"><span class="rl">Don’t auto-fill on</span>${ex}</div>
+        </div>`;
+      }).join('')
+    : `<span class="hint">No names yet — add people below and they'll appear in every dropdown.</span>`;
+  return `<div class="ecard" style="border-top-color:var(--edge)">
+    <div class="subhead">People / Roster <span class="hint">(one shared list for all days. Set each person's Primary role and a line's positions auto-fill with the best-ranked crew when you set it to Run 1st — skipping anyone absent, on vacation, or on a press.)</span></div>
+    <div class="roster">${rows}</div>
+    <div class="roster-add">
+      <input id="newName" placeholder="Add a person's name…">
+      <button class="btn" id="addName">Add</button>
+    </div>
+  </div>`;
+}
+/* Dedicated roster screen reached from the Edit Roster button. */
+function renderRoster(){
+  document.getElementById('view').innerHTML = `
+    <div class="edit-wrap">
+      <div class="roster-head">
+        <button class="btn" id="backToEdit">← Back to schedule</button>
+        <h2 class="roster-title">Roster</h2>
+      </div>
+      ${rosterEditorHTML()}
+    </div>`;
 }
 
 function sizeOptionsFor(lineNo, current){
@@ -1390,7 +1412,7 @@ document.getElementById('view').addEventListener('input', e=>{
   if(t.dataset.staff!==undefined){ board.staff[t.dataset.staff]=t.value; scheduleSave(); return; }
 });
 document.getElementById('view').addEventListener('keydown', e=>{
-  if(mode==='edit' && e.target && e.target.id==='newName' && e.key==='Enter'){
+  if(mode==='roster' && e.target && e.target.id==='newName' && e.key==='Enter'){
     e.preventDefault();
     if(rosterAdd(e.target.value)) render();
   }
@@ -1428,6 +1450,8 @@ document.getElementById('view').addEventListener('click', async e=>{
   if(t.id==='addLine'){ board.lines.push(blankLine("")); scheduleSave(); render(); }
   else if(t.id==='addPressRow'){ board.staff.presses.push(blankPressRow()); scheduleSave(); render(); }
   else if(t.id==='addName'){ const inp=document.getElementById('newName'); if(rosterAdd(inp&&inp.value)) render(); }
+  else if(t.id==='editRoster'){ mode='roster'; render(); }
+  else if(t.id==='backToEdit'){ mode='edit'; render(); }
   else if(t.dataset.ri!==undefined){ rosterRemove(+t.dataset.ri); render(); }
   else if(t.dataset.addop!==undefined){                          // add a person to a position
     const idx=+t.dataset.line, k=t.dataset.addop, arr=board.lines[idx].ops[k];
