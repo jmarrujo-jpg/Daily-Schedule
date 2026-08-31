@@ -272,13 +272,17 @@
     border-radius:6px;padding:5px 5px 5px 12px;font-family:var(--disp);font-weight:600;font-size:16px}
   .chip button{background:transparent;border:none;color:var(--dim);font-size:18px;line-height:.9;padding:0 5px;cursor:pointer}
   .chip button:hover{color:var(--red)}
-  /* one roster person: name + Primary / Secondary role pickers + remove */
-  .rmember{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--panel2);
-    border:1px solid var(--edge2);border-radius:7px;padding:7px 10px 7px 13px}
-  .rmember-name{font-family:var(--disp);font-weight:700;font-size:16px;min-width:130px;flex:1 1 130px}
+  /* one roster person: name, three role pickers, and up to two auto-fill exceptions */
+  .rmember{background:var(--panel2);border:1px solid var(--edge2);border-radius:8px;padding:9px 12px;
+    display:flex;flex-direction:column;gap:7px}
+  .rmember-top{display:flex;align-items:center;gap:10px}
+  .rmember-name{font-family:var(--disp);font-weight:700;font-size:16px;flex:1}
+  .rmember-roles,.rmember-excs{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .rmember-role{display:inline-flex;align-items:center;gap:6px}
-  .rmember-role .rl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700}
-  .rmember-role select{background:var(--panel);color:var(--text);border:1px solid var(--edge2);
+  .rmember .rl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700}
+  .rmember-excs .rl{color:var(--amber-d)}
+  .rmember-exc{display:inline-flex;gap:5px}
+  .rmember select{background:var(--panel);color:var(--text);border:1px solid var(--edge2);
     border-radius:5px;padding:5px 7px;font-size:13px}
   .rmember .rmname{background:transparent;border:none;color:var(--dim);font-size:19px;line-height:.9;
     padding:0 4px;cursor:pointer}
@@ -395,7 +399,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v46';
+var APP_VERSION = 'v47';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -427,6 +431,32 @@ const OP_ROLES = [
   ["bodymaker","Bodymaker"], ["doubleSeamer","Double Seamer"],
   ["palletizer","Palletizer"], ["frameStraps","Frame & Straps"], ["forklift","Forklift"]
 ];
+/* Roles a person can hold (Primary/Secondary/Tertiary). `pos` is the line
+   position this role staffs when Run 1st auto-fills a line — null means it's a
+   job title that never fills a line spot (Mechanic, Supervisor, etc.). The
+   five position values match OP_ROLES keys so earlier saves keep working. */
+const ROLE_CATALOG = [
+  {v:"bodymaker",       label:"Bodymaker",        pos:"bodymaker"},
+  {v:"doubleSeamer",    label:"Double Seamer",    pos:"doubleSeamer"},
+  {v:"palletizer",      label:"Palletizer",       pos:"palletizer"},
+  {v:"frameStraps",     label:"Frame & Straps",   pos:"frameStraps"},
+  {v:"forklift",        label:"Forklift",         pos:"forklift"},
+  {v:"forkliftDriver",  label:"Forklift Driver",  pos:"forklift"},
+  {v:"mechanic",        label:"Mechanic",         pos:null},
+  {v:"leadMechanic",    label:"Lead Mechanic",    pos:null},
+  {v:"slitterOperator", label:"Slitter Operator", pos:null},
+  {v:"slitterMechanic", label:"Slitter Mechanic", pos:null},
+  {v:"pressOperator",   label:"Press Operator",   pos:null},
+  {v:"scrollOperator",  label:"Scroll Operator",  pos:null},
+  {v:"custodian",       label:"Custodian",        pos:null},
+  {v:"supervisor",      label:"Supervisor",       pos:null},
+  {v:"foreman",         label:"Foreman",          pos:null},
+  {v:"retired",         label:"Retired",          pos:null},
+  {v:"na",              label:"N/A",              pos:null}
+];
+const ROLE_BY_V = Object.fromEntries(ROLE_CATALOG.map(r=>[r.v,r]));
+function roleLabel(v){ return (ROLE_BY_V[v]||{}).label || ''; }
+function rolePos(v){ return (ROLE_BY_V[v]||{}).pos || null; }
 const MAX_PER_POS = 3;
 const MAX_JOBS = 4;     // a line can run several products/customers at the same size
 
@@ -694,15 +724,21 @@ function updateSaveChip(){
 /* ---- Roster (people) ---- */
 /* Roster entries carry a Primary and Secondary role (an OP_ROLES key, or '').
    Older saves were a plain list of name strings — accept those and upgrade. */
+const MAX_EXC = 2;   // a person can carry up to two auto-fill exceptions
 function normalizeRoster(v){
   if(!Array.isArray(v)) return [];
-  const roleOk=r=> OP_ROLES.some(([k])=>k===r) ? r : '';
+  const roleOk=r=> ROLE_BY_V[r] ? r : '';
+  const posOk =r=> OP_ROLES.some(([k])=>k===r) ? r : '';
+  const excOk=arr=> (Array.isArray(arr)?arr:[]).slice(0,MAX_EXC).map(e=>({
+    line:String((e&&e.line)!=null?e.line:'').trim(), pos:posOk(e&&e.pos||'')
+  }));
   const seen=new Set(), out=[];
   v.forEach(item=>{
     const o = (item && typeof item==='object') ? item : {name:item};
     const name=String(o.name==null?'':o.name).trim(); if(!name) return;
     const key=name.toLowerCase(); if(seen.has(key)) return; seen.add(key);
-    out.push({name, primary:roleOk(o.primary||''), secondary:roleOk(o.secondary||'')});
+    out.push({name, primary:roleOk(o.primary||''), secondary:roleOk(o.secondary||''),
+      tertiary:roleOk(o.tertiary||''), exceptions:excOk(o.exceptions)});
   });
   return out;
 }
@@ -710,7 +746,7 @@ function rosterNames(){ return roster.map(p=>p.name); }
 function rosterAdd(name){
   name=(name||'').trim(); if(!name) return false;
   if(roster.some(p=>p.name.toLowerCase()===name.toLowerCase())) return true;  // already there
-  roster.push({name, primary:'', secondary:''}); saveRoster(); return true;
+  roster.push({name, primary:'', secondary:'', tertiary:'', exceptions:[]}); saveRoster(); return true;
 }
 function rosterRemove(i){ if(i>=0 && i<roster.length){ roster.splice(i,1); saveRoster(); } }
 async function saveRoster(){
@@ -857,16 +893,38 @@ function unavailableForLines(){
   (board.staff.presses||[]).forEach(row=> (row.ops||[]).forEach(add));
   return s;
 }
-/* Fill a line's positions from the roster's PRIMARY roles. A position is filled
-   only when exactly one AVAILABLE person (not off / not on a press) has that
-   primary role; otherwise it's cleared. Replaces whatever was there. Fires when
-   a line is set to Run 1st. */
-function autofillPrimary(l){
+/* Best tier (1=Primary, 2=Secondary, 3=Tertiary) at which this person's role
+   staffs the given line position, or 0 if none of their roles cover it. */
+function posTier(p, posKey){
+  const roles=[p.primary, p.secondary, p.tertiary];
+  for(let t=0;t<roles.length;t++){ if(rolePos(roles[t])===posKey) return t+1; }
+  return 0;
+}
+/* True when this person has an exception blocking them from posKey on this line. */
+function excBlocks(p, lineNo, posKey){
+  return (p.exceptions||[]).some(e=> e && String(e.line).trim()===String(lineNo).trim() && e.pos===posKey);
+}
+/* Fill a line's positions from the roster roles, best-available-by-rank. For
+   each position, gather available people (not off / not on a press / not
+   excepted for this line+position) who can staff it, pick the best tier present;
+   fill only if exactly one person holds that best tier, else leave blank. Ties
+   at the best tier stay blank. Replaces whatever was there. Fires on Run 1st. */
+function autofillLine(l){
   const off=unavailableForLines();
+  const lineNo=String(l.lineNo||'').trim();
   if(!l.ops) l.ops={};
-  OP_ROLES.forEach(([k])=>{
-    const cands=roster.filter(p=>p.primary===k && !off.has(p.name.trim().toLowerCase()));
-    l.ops[k] = (cands.length===1) ? [cands[0].name] : [""];
+  OP_ROLES.forEach(([posKey])=>{
+    const cands=[];
+    roster.forEach(p=>{
+      if(off.has(p.name.trim().toLowerCase())) return;
+      if(excBlocks(p, lineNo, posKey)) return;
+      const tier=posTier(p, posKey);
+      if(tier>0) cands.push({name:p.name, tier});
+    });
+    if(!cands.length){ l.ops[posKey]=[""]; return; }
+    const best=Math.min(...cands.map(c=>c.tier));
+    const top=cands.filter(c=>c.tier===best);
+    l.ops[posKey] = (top.length===1) ? [top[0].name] : [""];
   });
 }
 function updateCoChip(){
@@ -1136,18 +1194,40 @@ function renderEdit(){
     </div>`;
   }).join('');
 
+  const uniqLineNos = [...new Set(board.lines.map(l=>String(l.lineNo||'').trim()).filter(Boolean))];
   const roleSel=(i,field,cur)=>{
     let o=`<option value="">—</option>`;
-    OP_ROLES.forEach(([k,label])=>{ o+=`<option value="${k}" ${k===cur?'selected':''}>${esc(label)}</option>`; });
+    ROLE_CATALOG.forEach(r=>{ o+=`<option value="${r.v}" ${r.v===cur?'selected':''}>${esc(r.label)}</option>`; });
     return `<select data-roleidx="${i}" data-rolefield="${field}">${o}</select>`;
   };
+  const excLineSel=(i,si,cur)=>{
+    let o=`<option value="">— line —</option>`;
+    const list=uniqLineNos.slice(); if(cur && !list.includes(cur)) list.push(cur);
+    list.forEach(n=>{ o+=`<option value="${esc(n)}" ${n===cur?'selected':''}>Line ${esc(n)}</option>`; });
+    return `<select data-exidx="${i}" data-exslot="${si}" data-exfield="line">${o}</select>`;
+  };
+  const excPosSel=(i,si,cur)=>{
+    let o=`<option value="">— position —</option>`;
+    OP_ROLES.forEach(([k,label])=>{ o+=`<option value="${k}" ${k===cur?'selected':''}>${esc(label)}</option>`; });
+    return `<select data-exidx="${i}" data-exslot="${si}" data-exfield="pos">${o}</select>`;
+  };
   const rosterChips = roster.length
-    ? roster.map((p,i)=>`<div class="rmember">
-        <span class="rmember-name">${esc(p.name)}</span>
-        <span class="rmember-role"><span class="rl">Primary</span>${roleSel(i,'primary',p.primary)}</span>
-        <span class="rmember-role"><span class="rl">Secondary</span>${roleSel(i,'secondary',p.secondary)}</span>
-        <button class="rmname" data-ri="${i}" title="Remove ${esc(p.name)}">×</button>
-      </div>`).join('')
+    ? roster.map((p,i)=>{
+        const ex=[0,1].map(si=>{ const e=(p.exceptions&&p.exceptions[si])||{line:'',pos:''};
+          return `<span class="rmember-exc">${excLineSel(i,si,e.line)}${excPosSel(i,si,e.pos)}</span>`; }).join('');
+        return `<div class="rmember">
+          <div class="rmember-top">
+            <span class="rmember-name">${esc(p.name)}</span>
+            <button class="rmname" data-ri="${i}" title="Remove ${esc(p.name)}">×</button>
+          </div>
+          <div class="rmember-roles">
+            <span class="rmember-role"><span class="rl">Primary</span>${roleSel(i,'primary',p.primary)}</span>
+            <span class="rmember-role"><span class="rl">2nd</span>${roleSel(i,'secondary',p.secondary)}</span>
+            <span class="rmember-role"><span class="rl">3rd</span>${roleSel(i,'tertiary',p.tertiary)}</span>
+          </div>
+          <div class="rmember-excs"><span class="rl">Don’t auto-fill on</span>${ex}</div>
+        </div>`;
+      }).join('')
     : `<span class="hint">No names yet — add people below and they'll appear in every dropdown.</span>`;
 
   const staffPeople = STAFF_PEOPLE.map(([k,label])=>`
@@ -1239,7 +1319,7 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.dataset.f){
       const f=t.dataset.f; l[f]=t.value;
       if(f==='status'){
-        if(t.value==='run1') autofillPrimary(l);                    // drop in the primary crew
+        if(t.value==='run1') autofillLine(l);                       // drop in the best-available crew
         scheduleSave(); render(); return;                           // recolor card + header
       }
       if(f==='size'){
@@ -1255,9 +1335,19 @@ document.getElementById('view').addEventListener('input', e=>{
       return;
     }
   }
-  if(t.dataset.roleidx!==undefined && t.dataset.rolefield){      // roster Primary/Secondary role
+  if(t.dataset.roleidx!==undefined && t.dataset.rolefield){      // roster Primary/2nd/3rd role
     const i=+t.dataset.roleidx, f=t.dataset.rolefield;
     if(roster[i]){ roster[i][f]=t.value; saveRoster(); }
+    return;
+  }
+  if(t.dataset.exidx!==undefined && t.dataset.exslot!==undefined && t.dataset.exfield){  // auto-fill exception
+    const pi=+t.dataset.exidx, si=+t.dataset.exslot, f=t.dataset.exfield, p=roster[pi];
+    if(p){
+      if(!Array.isArray(p.exceptions)) p.exceptions=[];
+      while(p.exceptions.length<=si) p.exceptions.push({line:'',pos:''});
+      p.exceptions[si][f]=t.value;
+      saveRoster();
+    }
     return;
   }
   if(t.dataset.staffp!==undefined && t.dataset.i!==undefined){   // absent / vacation person
