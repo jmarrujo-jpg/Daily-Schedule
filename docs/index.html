@@ -424,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v50';
+var APP_VERSION = 'v51';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1419,7 +1419,7 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;',
 
 /* ============================ Edit event wiring ============================ */
 document.getElementById('view').addEventListener('input', e=>{
-  const t=e.target; if(mode!=='edit') return;
+  const t=e.target; if(mode!=='edit' && mode!=='roster') return;  // roster screen also uses this handler (role + exception-line selects)
   const li = t.getAttribute('data-line');
   if(li!==null){
     const idx=+li, l=board.lines[idx];
