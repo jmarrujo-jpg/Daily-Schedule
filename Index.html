@@ -424,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v51';
+var APP_VERSION = 'v52';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1303,7 +1303,6 @@ function renderEdit(){
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <div class="savechip" id="saveChip"><span class="dot"></span><span class="txt">Saved</span></div>
         <div class="spacer" style="flex:1"></div>
-        <button class="btn" id="copyPrev">Start from yesterday</button>
         <button class="btn" id="clearDay">Clear this day</button>
       </div>
       <div class="ecard" style="border-top-color:var(--amber)">
@@ -1319,10 +1318,7 @@ function renderEdit(){
           <button class="addline" id="addPressRow">＋ add press</button>
         </div>
         <div class="ecard" style="border-top-color:var(--edge)">
-          <div class="subhead">Absent, vacation &amp; support crew
-            <button class="btn tiny" id="pullTimeOff" title="Fill Absent &amp; Vacation from the shared Google Calendar for this day">⤓ Pull from Calendar</button>
-            <span class="hint" id="timeOffStatus"></span>
-          </div>
+          <div class="subhead">Absent, vacation &amp; support crew</div>
           <div class="edit-staff">${staffPeople}${staffText}</div>
         </div>
       </div>
@@ -1514,36 +1510,8 @@ document.getElementById('view').addEventListener('keydown', e=>{
     if(rosterAdd(e.target.value)) render();
   }
 });
-/* Normalize a calendar name to the roster's spelling when it matches (case-insensitive),
-   so calendar entries line up with the dropdowns. */
-function matchRoster(names){
-  return (names||[]).map(n=>{ const hit=roster.find(r=>r.name.toLowerCase()===String(n).toLowerCase()); return hit?hit.name:n; });
-}
-/* Pull today's Absent / Vacation people from the shared Google Calendar (via the Worker)
-   and merge them into this day's lists — existing manual entries are kept. */
-async function pullTimeOff(){
-  const st=document.getElementById('timeOffStatus');
-  const setStatus=(msg,err)=>{ const el=document.getElementById('timeOffStatus'); if(el){ el.style.color=err?'var(--red)':''; el.textContent=msg; } };
-  if(!API_URL){ setStatus('Calendar needs the online backend (API_URL is blank).',true); return; }
-  setStatus('Checking calendar…',false);
-  try{
-    const res=await callApi('getTimeOff',[keyFor(curDate)]);
-    const norm=arr=>Array.from(new Set((arr||[]).map(s=>String(s||'').trim()).filter(Boolean)));
-    const calVac=matchRoster(norm(res&&res.vacation));
-    const calAbs=matchRoster(norm(res&&res.absent));
-    const merge=(cur,add)=>{ const out=(Array.isArray(cur)?cur.slice():[]).map(s=>String(s||'').trim()).filter(Boolean);
-      add.forEach(n=>{ if(!out.some(x=>x.toLowerCase()===String(n).toLowerCase())) out.push(n); }); return out; };
-    board.staff.vacation=merge(board.staff.vacation,calVac);
-    board.staff.absent=merge(board.staff.absent,calAbs);
-    scheduleSave(); render();
-    setStatus((calVac.length+calAbs.length)
-      ? ('Pulled '+calVac.length+' on vacation, '+calAbs.length+' absent for this day.')
-      : 'No time-off entries on the calendar for this day.', false);
-  }catch(e){ setStatus('Calendar error: '+(e&&e.message?e.message:'failed'), true); }
-}
 document.getElementById('view').addEventListener('click', async e=>{
   const t=e.target;
-  if(t.id==='pullTimeOff'){ pullTimeOff(); return; }
   if(t.id==='addLine'){ board.lines.push(blankLine("")); scheduleSave(); render(); }
   else if(t.id==='addPressRow'){ board.staff.presses.push(blankPressRow()); scheduleSave(); render(); }
   else if(t.id==='addName'){ const inp=document.getElementById('newName'); if(rosterAdd(inp&&inp.value)) render(); }
@@ -1616,19 +1584,7 @@ document.getElementById('view').addEventListener('click', async e=>{
   }
   else if(t.dataset.rmline!==undefined){ board.lines.splice(+t.dataset.rmline,1); scheduleSave(); render(); }
   else if(t.id==='clearDay'){ if(confirm('Clear all entries for this day?')){ board=blankBoard(curDate); scheduleSave(); render(); } }
-  else if(t.id==='copyPrev'){ await copyFromYesterday(); }
 });
-async function copyFromYesterday(){
-  const prev=shiftWorkday(curDate,-1);   // previous work-day (skips the weekend)
-  let src;
-  try{ src=await Store.get(keyFor(prev)); }
-  catch(err){ alert('Could not reach the board server to load '+fmtDateLong(prev)); return; }
-  if(!src){ alert('No board found for '+fmtDateLong(prev)); return; }
-  // Copy the setup as a starting point: roll CO→Run 1st and carry order remainders.
-  board = seedFromBoard(src);
-  board.date=curDate;
-  scheduleSave(); render();
-}
 
 /* ============================ Nav / mode / fullscreen ============================ */
 async function goDate(date){ curDate=date; await loadBoard(date); render(); }
