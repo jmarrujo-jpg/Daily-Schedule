@@ -424,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v52';
+var APP_VERSION = 'v53';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1703,21 +1703,32 @@ function scheduleRecovery(){
 function manualRefresh(){ if(loadError) reloadDay(); else pollBoard(true); }
 const rb=document.getElementById('refreshBtn'); if(rb) rb.onclick=manualRefresh;
 
+/* Overnight rollover. An always-on shop-floor display stays visible and focused
+   across midnight, so NONE of the wake/focus/visibility events below ever fire —
+   which left curDate stuck on yesterday all morning, and every auto-refresh kept
+   pulling yesterday's board (today's edits saved under today's key never showed).
+   So a plain timer advances the day too: the moment the calendar date passes
+   curDate, jump to today and load it fresh. At most ~30 s late, and it only ever
+   calls out on the one tick that actually rolls the date.
+   TV-only and board-view-only on purpose: on a normal editing PC you must NOT be
+   yanked off a past/future day you're deliberately viewing (or mid-edit). */
+function maybeRollover(){
+  if(!TV_MODE || mode!=='board' || saving) return false;
+  if(todayStr()===curDate) return false;
+  goDate(todayStr());   // sets curDate synchronously, then loads + renders today
+  return true;
+}
+setInterval(maybeRollover, 30*1000);
+
 /* Wake / focus recovery. When a PC sleeps, JS timers freeze and the page can
    come back on a stale day (still showing yesterday). On the unattended TV
    display, if the date rolled over while we were away, jump to today; either
    way, re-arm the sync timer and pull once. Guarded by the same window rules,
    so it never adds off-hours server calls. (The daily shutdown makes this rare,
-   but it means a display left on still heals itself instead of freezing.)
-   The date-jump is TV-only on purpose: on a normal PC the focus you get back
-   from opening a production slip (or any other tab) must NOT yank you off the
-   past day you're viewing. */
+   but it means a display left on still heals itself instead of freezing.) */
 async function wakeCheck(){
   if(document.hidden) return;
-  if(TV_MODE && mode==='board' && !saving){
-    const today=todayStr();
-    if(today!==curDate){ await goDate(today); }   // overnight rollover — load today fresh
-  }
+  maybeRollover();                                  // same TV-only overnight jump
   clearTimeout(syncTimer); scheduleSync();          // recover the frozen timer chain
 }
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) wakeCheck(); });
