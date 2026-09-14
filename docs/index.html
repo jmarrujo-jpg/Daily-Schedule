@@ -428,14 +428,25 @@ var APP_VERSION = 'v53';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
-  const r = await fetch(API_URL, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({fn:fn, args:args||[], secret:API_SECRET})
-  });
-  let j;
-  try{ j = await r.json(); }catch(e){ throw new Error('Server returned a non-JSON response'); }
-  if(!j || j.ok!==true) throw new Error((j && j.error) ? j.error : ('Request failed ('+r.status+')'));
-  return j.result;
+  // Abort after 15 s. Without this, a half-open connection (flaky shop wifi)
+  // leaves fetch() awaiting forever — which would wedge the poll lock and
+  // freeze the display on stale data until the PC restarts.
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), 15000);
+  try{
+    const r = await fetch(API_URL, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({fn:fn, args:args||[], secret:API_SECRET}),
+      signal: ctrl.signal
+    });
+    let j;
+    try{ j = await r.json(); }catch(e){ throw new Error('Server returned a non-JSON response'); }
+    if(!j || j.ok!==true) throw new Error((j && j.error) ? j.error : ('Request failed ('+r.status+')'));
+    return j.result;
+  }catch(e){
+    if(e && e.name==='AbortError') throw new Error('Request timed out');
+    throw e;
+  }finally{ clearTimeout(t); }
 }
 
 /* ============================ Reference data ============================ */
@@ -1647,15 +1658,18 @@ function currentWindow(){
   const mins=d.getHours()*60+d.getMinutes();
   return SYNC_WINDOWS.find(w=> mins>=w.startMin && mins<w.endMin) || null;
 }
-let polling=false;
+let polling=false, pollStartedAt=0;
 /* Fetch the board and re-paint if it changed. `manual` bypasses the schedule (the
    Refresh button) but still respects edit-mode / already-in-flight guards. */
 async function pollBoard(manual){
-  if(polling) return;
+  // Watchdog: normally skip if a fetch is already in flight, but if that fetch
+  // has been stuck longer than 30 s (a hung request that never resolved), break
+  // the stale lock so the poller can never wedge the display permanently.
+  if(polling){ if(Date.now()-pollStartedAt < 30000) return; polling=false; }
   if(loadError) return;   // in an error state — the recovery loop owns retries, not the poll
   if(!manual && (mode!=='board' || saving || document.hidden)) return;
   if(mode!=='board' || saving) return;
-  polling=true;
+  polling=true; pollStartedAt=Date.now();
   try{
     const fresh=await Store.get(keyFor(curDate));
     if(fresh){
