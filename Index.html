@@ -424,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v53';
+var APP_VERSION = 'v54';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -434,8 +434,13 @@ async function callApi(fn, args){
   const ctrl = new AbortController();
   const t = setTimeout(()=>ctrl.abort(), 15000);
   try{
-    const r = await fetch(API_URL, {
-      method:'POST', headers:{'Content-Type':'application/json'},
+    // cache:'no-store' + a unique query param defeat any intermediate proxy or
+    // browser cache that might keep replaying the FIRST response to these
+    // byte-identical polls (a real shop-network failure mode: the board loads
+    // once at startup and then never changes because a cached reply is reused).
+    const url = API_URL + (API_URL.indexOf('?')<0 ? '?' : '&') + '_=' + Date.now();
+    const r = await fetch(url, {
+      method:'POST', cache:'no-store', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({fn:fn, args:args||[], secret:API_SECRET}),
       signal: ctrl.signal
     });
@@ -604,6 +609,8 @@ let recoverTimer = null;   // retry handle for auto-recovering from a failed loa
 let daySaved = false;      // true when the day being viewed exists as a saved board (for slip lookup)
 let lastBoardSig = null;   // last board we've seen from storage — used to skip needless re-renders
 let lastSyncAt = null;     // when the display last confirmed it's in sync with the server
+let lastPollError = null;  // message from the most recent failed poll (shown on the floor)
+let pollFailCount = 0;     // consecutive failed polls; escalates to the visible recovery path
 function boardSig(b){ try{ return JSON.stringify(b); }catch(e){ return 'x'+Math.random(); } }
 
 function todayStr(d=new Date()){ return d.toLocaleDateString('en-CA'); } // YYYY-MM-DD local
@@ -775,7 +782,7 @@ async function loadBoard(date){
   board.date = date;
   lastBoardSig = boardSig(board);   // baseline: the display won't re-render until this changes
   lastSyncAt = Date.now();
-  if(loadError) scheduleRecovery(); else clearTimeout(recoverTimer);
+  if(loadError) scheduleRecovery(); else { clearTimeout(recoverTimer); pollFailCount=0; lastPollError=null; }
 }
 function scheduleSave(){
   refreshConflicts();      // keep the conflict banner live as fields change
@@ -1679,9 +1686,25 @@ async function pollBoard(manual){
         board=normalizeBoard(fresh); board.date=curDate;
         renderBoard(); updateCoChip();
       }
-      lastSyncAt=Date.now();
     }
-  }catch(e){ /* transient network blip — keep showing the last good board */ }
+    // A completed request — even for an empty day — proves we can reach the
+    // server, so clear the failure state.
+    lastSyncAt=Date.now(); lastPollError=null; pollFailCount=0;
+  }catch(e){
+    // Poll failed. Previously this was swallowed forever, so a display whose
+    // polls kept failing (dead keep-alive connection, blocked proxy, hung
+    // request) would sit on stale data showing "Live" and NEVER recover on
+    // its own. Now: count the failures and, after a few in a row, fall into
+    // the visible load-error + auto-recovery path so the display heals itself
+    // and shows WHY it's stale instead of pretending to be live.
+    pollFailCount++;
+    lastPollError = (e && e.message) ? e.message : String(e);
+    if(pollFailCount>=3 && mode==='board' && !saving){
+      // Keep the poll lock held through the reload (well under the 30 s
+      // watchdog) so a scheduled tick can't start a second fetch mid-reload.
+      await reloadDay();        // loadBoard sets loadError + starts scheduleRecovery on failure
+    }
+  }
   finally{ polling=false; markSynced(); }
 }
 /* Self-scheduling tick: sleeps until the next check the current window calls for,
@@ -1769,6 +1792,12 @@ function markSynced(){
   const secs=lastSyncAt?Math.max(0,Math.round((Date.now()-lastSyncAt)/1000)):null;
   const ago = secs===null ? 'not yet' : (secs<60?(secs<2?'just now':secs+'s ago')
             : Math.round(secs/60)+'m ago');
+  if(pollFailCount>0){   // a poll has failed — say so on the floor instead of a false "Live"
+    const hint = lastPollError ? (' — '+lastPollError) : '';
+    el.textContent='⚠ Reconnecting… (last sync '+ago+')'+hint;
+    el.classList.add('stale'); el.title = lastPollError || '';
+    return;
+  }
   if(w){ el.textContent='● Live · '+ago; el.classList.toggle('stale', secs!==null && secs>w.every/1000+30); }
   else { el.textContent='⏸ Auto-sync off · ⟳ to refresh · updated '+ago; el.classList.add('stale'); }
 }
