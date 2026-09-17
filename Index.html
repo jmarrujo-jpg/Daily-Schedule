@@ -12,7 +12,7 @@
     --bg:#0d1117; --panel:#161d26; --panel2:#1e2732; --edge:#2b3947; --edge2:#3a4b5c;
     --text:#eef3f8; --muted:#8593a0; --dim:#54626f;
     --amber:#ffb300; --amber-d:#c98a00;
-    --green:#29c467; --red:#ef4444; --blue:#3aa0ff; --purple:#a175ff;
+    --green:#29c467; --red:#ef4444; --blue:#3aa0ff; --purple:#a175ff; --cyan:#22c3c3;
     --disp:'Barlow Condensed', sans-serif;
     --body:'Barlow', sans-serif;
     --mono:'IBM Plex Mono', monospace;
@@ -424,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v54';
+var APP_VERSION = 'v55';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -507,6 +507,15 @@ const POS_BY_KEY   = Object.fromEntries(OP_ROLES.map(([k,l])=>[k,l]));
 const POS_BY_LABEL = Object.fromEntries(OP_ROLES.map(([k,l])=>[l.toLowerCase(),k]));
 function posVal(x){ const s=String(x||'').trim(); if(!s) return ''; if(POS_BY_KEY[s]) return s; return POS_BY_LABEL[s.toLowerCase()]||''; }
 function posLabel(k){ return POS_BY_KEY[k]||''; }
+/* Which positions actually exist on a given line. Only Line 6 runs a Frame &
+   Straps station, so that position (and its auto-fill) is limited to Line 6;
+   every other position exists on every line. Drives the board, the editor, and
+   auto-fill so a Frame & Straps person is never placed on lines 2/4/5. */
+function posOnLine(posKey, lineNo){
+  if(posKey==='frameStraps') return String(lineNo||'').trim()==='6';
+  return true;
+}
+function lineRoles(lineNo){ return OP_ROLES.filter(([k])=> posOnLine(k, lineNo)); }
 /* Exceptions: a list of { line, positions[] }. line '' means ALL lines. Stored
    in the sheet as one readable string, e.g.
      "All lines: Palletizer ; Line 6: Double Seamer, Palletizer"
@@ -548,9 +557,11 @@ const STATUS = {
   run2   : { pill:"Run 2nd", label:"Run 2nd",              color:"var(--blue)",  fg:"#0d1117" },
   backup : { pill:"Back Up", label:"Back Up",              color:"var(--purple)",fg:"#ffffff" },
   rwr    : { pill:"RWR",     label:"RWR (Run When Ready)",  color:"var(--amber)", fg:"#161009" },
+  mechRun: { pill:"Mech Run",label:"Mechanics Run",         color:"var(--cyan)",  fg:"#08211f" },
   co     : { pill:"CO",      label:"CO (Change Over)",      color:"var(--red)",   fg:"#ffffff" }
 };
-const STATUS_ORDER = ["", "run1", "run2", "backup", "rwr", "co"];
+// mechRun deliberately sits BEFORE co here and in BOARD_PRIO; it never auto-fills crew.
+const STATUS_ORDER = ["", "run1", "run2", "backup", "rwr", "mechRun", "co"];
 function statusOf(l){ return STATUS[l.status] ? l.status : ""; }
 
 const DEFAULT_LINE_ORDER = ["6","5","4","2"];
@@ -628,6 +639,15 @@ function commaField(el){
   el.value=out;
   try{ el.setSelectionRange(out.length,out.length); }catch(e){}
   return out;
+}
+/* Force an input to upper-case as you type (product codes, customers, ends),
+   keeping the caret where it was so typing isn't disrupted. */
+function upperField(el){
+  const start=el.selectionStart, end=el.selectionEnd;
+  const up=(el.value||'').toUpperCase();
+  el.value=up;
+  try{ el.setSelectionRange(start,end); }catch(e){}
+  return up;
 }
 
 /* A line runs one can SIZE, but can carry several JOBS (products) at that size —
@@ -859,7 +879,7 @@ function collectConflicts(){
     if(l.hidden) return;
     const st=statusOf(l);
     if(st==='') return;   // idle line: ready, not running — its names don't count as booked
-    OP_ROLES.forEach(([key,label])=> opArr(l,key).forEach(n=> add(n,'Line '+(l.lineNo||'?')+' · '+label,'work',st)));
+    lineRoles(l.lineNo).forEach(([key,label])=> opArr(l,key).forEach(n=> add(n,'Line '+(l.lineNo||'?')+' · '+label,'work',st)));
   });
   (board.staff.presses||[]).forEach(row=>
     (row.ops||[]).forEach(n=> add(n,'Press '+(row.u||'?'),'work')));
@@ -1009,7 +1029,7 @@ function exceptionViolations(){
   board.lines.forEach((l,idx)=>{
     if(l.hidden || statusOf(l)==='') return;
     const lineNo=String(l.lineNo||'').trim();
-    OP_ROLES.forEach(([posKey,label])=>{
+    lineRoles(lineNo).forEach(([posKey,label])=>{
       opArr(l,posKey).forEach((n,i)=>{
         const name=String(n||'').trim(); if(!name) return;
         const p=rosterEntry(name); if(!p) return;
@@ -1028,19 +1048,45 @@ function autofillLine(l){
   const off=unavailableForLines();
   const lineNo=String(l.lineNo||'').trim();
   if(!l.ops) l.ops={};
-  OP_ROLES.forEach(([posKey])=>{
-    const cands=[];
+  // Positions that don't exist on this line (e.g. Frame & Straps off Line 6) are cleared.
+  OP_ROLES.forEach(([posKey])=>{ if(!posOnLine(posKey, lineNo)) l.ops[posKey]=[""]; });
+
+  const roles=lineRoles(lineNo);
+  // For each position, find its best AVAILABLE tier and everyone who holds it there.
+  const best={};
+  roles.forEach(([posKey])=>{
+    let bt=99, names=[];
     roster.forEach(p=>{
       if(off.has(p.name.trim().toLowerCase())) return;
       if(excBlocks(p, lineNo, posKey)) return;
       const tier=posTier(p, posKey);
-      if(tier>0) cands.push({name:p.name, tier});
+      if(tier<=0) return;
+      if(tier<bt){ bt=tier; names=[p.name]; }
+      else if(tier===bt){ names.push(p.name); }
     });
-    if(!cands.length){ l.ops[posKey]=[""]; return; }
-    const best=Math.min(...cands.map(c=>c.tier));
-    const top=cands.filter(c=>c.tier===best);
-    l.ops[posKey] = (top.length===1) ? [top[0].name] : [""];
+    best[posKey]={tier:bt, names};
   });
+
+  // Assign tier by tier (Primary before Secondary before Tertiary) so a person
+  // contested between their own primary spot and someone else's secondary spot
+  // is claimed by the primary. Each position only ever fills from ITS OWN best
+  // tier; a genuine tie at that tier stays blank for a human to decide. Nobody
+  // is placed in two positions on the same line.
+  const taken=new Set();
+  for(let t=1;t<=3;t++){
+    roles.forEach(([posKey])=>{
+      if(best[posKey].tier!==t) return;
+      const avail=best[posKey].names.filter(n=> !taken.has(n.trim().toLowerCase()));
+      if(avail.length===1){ l.ops[posKey]=[avail[0]]; taken.add(avail[0].trim().toLowerCase()); }
+      else l.ops[posKey]=[""];
+    });
+  }
+  roles.forEach(([posKey])=>{ if(best[posKey].tier>3) l.ops[posKey]=[""]; });   // no candidate at all
+}
+/* Idle and Change-Over lines carry no crew — wipe every position clean. */
+function clearLineCrew(l){
+  if(!l.ops) l.ops={};
+  OP_ROLES.forEach(([k])=>{ l.ops[k]=[""]; });
 }
 function updateCoChip(){
   const n = changeoverCount(), el=document.getElementById('coChip');
@@ -1105,7 +1151,7 @@ function cardHTML(l){
     </div>`;}).join('');
   // Idle = the line is ready but not running today, so it carries no crew on the
   // board — hide the names entirely (they're kept in the edit view for later).
-  const ops = st==='' ? '' : OP_ROLES.map(([k,label])=>{
+  const ops = st==='' ? '' : lineRoles(l.lineNo).map(([k,label])=>{
     const names = opArr(l,k).map(s=>s.trim()).filter(Boolean);
     const who = names.length
       ? `<span class="who"><span class="n1">${esc(names[0])}</span>${names.slice(1).map(n=>`<span class="nx">+ ${esc(n)}</span>`).join('')}</span>`
@@ -1129,7 +1175,7 @@ function cardHTML(l){
   </div>`;
 }
 /* Board order: running lines first (Run 1st, Run 2nd, Back Up, RWR, CO), idle last. */
-const BOARD_PRIO = {run1:0, run2:1, backup:2, rwr:3, co:4, "":5};
+const BOARD_PRIO = {run1:0, run2:1, backup:2, rwr:3, mechRun:4, co:5, "":6};
 function renderBoard(){
   // Hidden lines never show. Sort the rest by status priority.
   const cards = board.lines.filter(l=>!l.hidden)
@@ -1246,7 +1292,7 @@ function renderEdit(){
   const lineCards = board.lines.map((l,idx)=>{
     const sizeOpts = sizeOptionsFor(l.lineNo, l.size);
     const sd = STATUS[statusOf(l)];
-    const opFields = OP_ROLES.map(([k,label])=>`
+    const opFields = lineRoles(l.lineNo).map(([k,label])=>`
       <div class="fld"><label>${label}</label>${posInputs(l,idx,k)}</div>`).join('');
     const jobFields = (l.jobs||[]).map((j,ji)=>{
       const palPick = PALLET_OPTS.map(opt=>{
@@ -1451,13 +1497,16 @@ document.getElementById('view').addEventListener('input', e=>{
       const ji=+t.dataset.job;
       if(!l.jobs[ji]) l.jobs[ji]=blankJob();
       const jf=t.dataset.jf;
-      l.jobs[ji][jf] = (jf==='order'||jf==='made') ? commaField(t) : t.value;
+      // order/made are comma-formatted numbers; product code, customer and ends
+      // are upper-cased as you type.
+      l.jobs[ji][jf] = (jf==='order'||jf==='made') ? commaField(t) : upperField(t);
       scheduleSave(); return;
     }
     if(t.dataset.f){
       const f=t.dataset.f; l[f]=t.value;
       if(f==='status'){
         if(t.value==='run1') autofillLine(l);                       // drop in the best-available crew
+        else if(t.value==='' || t.value==='co') clearLineCrew(l);   // idle / change-over carry no crew
         scheduleSave(); render(); return;                           // recolor card + header
       }
       if(f==='size'){
