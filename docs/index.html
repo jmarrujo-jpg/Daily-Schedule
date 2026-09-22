@@ -424,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v56';
+var APP_VERSION = 'v57';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1300,7 +1300,7 @@ function renderEdit(){
       }).join('');
       return `
       <div class="jobedit">
-        <div class="jobedit-h"><span>Product ${ji+1}</span>${l.jobs.length>1?`<button data-rmjob="${idx}" data-ji="${ji}">remove</button>`:''}</div>
+        <div class="jobedit-h"><span>Product ${ji+1}</span><div class="spacer" style="flex:1"></div>${ji>0?`<button data-swapjob="${idx}" data-ji="${ji}">⇅ swap with Product ${ji}</button>`:''}${l.jobs.length>1?`<button data-rmjob="${idx}" data-ji="${ji}">remove</button>`:''}</div>
         <div class="row2">
           <div class="fld"><label>Product code</label>
             <input value="${esc(j.code)}" data-line="${idx}" data-job="${ji}" data-jf="code" placeholder="e.g. 10432"></div>
@@ -1641,6 +1641,10 @@ document.getElementById('view').addEventListener('click', async e=>{
   else if(t.dataset.addjob!==undefined){                         // add a product/job to a line
     const i=+t.dataset.addjob, L=board.lines[i];
     if(L.jobs.length<MAX_JOBS){ L.jobs.push(blankJob()); scheduleSave(); render(); }
+  }
+  else if(t.dataset.swapjob!==undefined){                        // swap a product with the one above it
+    const i=+t.dataset.swapjob, ji=+t.dataset.ji, J=board.lines[i].jobs;
+    if(ji>0 && J[ji] && J[ji-1]){ const tmp=J[ji-1]; J[ji-1]=J[ji]; J[ji]=tmp; scheduleSave(); render(); }
   }
   else if(t.dataset.rmjob!==undefined){                          // remove a product/job
     const i=+t.dataset.rmjob, ji=+t.dataset.ji;
