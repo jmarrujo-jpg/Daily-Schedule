@@ -105,7 +105,7 @@
     background:rgba(255,255,255,.03);border:1px solid var(--edge);border-radius:7px;padding:7px 11px}
   .fact .flbl{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.06em}
   .fact .fval{font-family:var(--disp);font-weight:700;font-size:21px;color:var(--text);
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+    line-height:1.05;word-break:break-word}
   .fact .fval.mono{font-family:var(--mono);font-weight:600;font-size:19px}
   .fact .fval.code{color:var(--amber)}
   .fact .fsub{font-size:11px;color:var(--dim);font-weight:500}
@@ -333,16 +333,29 @@
   /* print: two options — color (screen look) and white (writable). Both fit
      one landscape sheet and carry a centered title header with the date. */
   .print-title{display:none}
+  /* off-screen mirror of the print layout, used only to MEASURE the board so we
+     can auto-scale it to fit one page (see measurePrintScale) */
+  body.measuring .topbar,body.measuring .foot-note,body.measuring #conflictBox{display:none !important}
+  body.measuring .print-title{display:flex !important}
+  body.measuring #view,body.measuring .print-title{position:absolute !important;left:-10000px !important;top:0 !important;width:980px !important;padding:0 !important}
+  body.measuring .layout{display:grid !important;grid-template-columns:1fr 320px !important;gap:14px !important;align-items:start}
+  body.measuring .board-grid{grid-auto-rows:auto !important}
+
   @media print{
-    @page{size:landscape;margin:0.35in}
+    @page{size:landscape;margin:0.3in}
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
     html,body{background:var(--bg) !important;color:var(--text) !important}
     body{padding:0 !important;min-height:0 !important;display:block !important}
     /* Print the board EXACTLY as it looks on screen — only the app chrome is
-       hidden and a dated title added. No font/size overrides, so the printout
-       matches the design (the browser's fit-to-page scales it down to size). */
+       hidden and a dated title added. No font/size overrides. A single scale
+       (--pzoom, computed to fit one landscape page) shrinks the whole board so
+       it prints on one sheet at 100% with default margins — no manual scaling. */
     .topbar,.foot-note,#conflictBox{display:none !important}
+    .print-title,main{zoom:var(--pzoom,1)}
     main{padding:0 !important}
+    /* on paper, let idle / change-over tiles be their natural (short) height so the
+       running lines print larger and the sheet is used well */
+    .board-grid{grid-auto-rows:auto !important}
     .print-title{display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--disp);
       font-weight:800;font-size:20px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
       margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid var(--edge2)}
@@ -420,7 +433,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v71';
+var APP_VERSION = 'v72';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1792,14 +1805,33 @@ document.getElementById('fsBtn').onclick=()=>{
   else document.exitFullscreen&&document.exitFullscreen();
 };
 document.addEventListener('fullscreenchange',()=>document.body.classList.toggle('fs', TV_MODE || !!document.fullscreenElement));
+/* Measure the board at the print layout width and return a scale that fits it
+   onto one landscape sheet, so printing needs no manual "70% / minimum margins". */
+function measurePrintScale(){
+  const PW=980, PH=735;   // landscape Letter printable area (px @96dpi, ~0.3in margins), a touch conservative
+  const title=document.getElementById('printTitle'), view=document.getElementById('view');
+  document.body.classList.add('measuring');
+  let h=0, w=0;
+  try{
+    h=(title.offsetHeight||0)+(view.scrollHeight||0);
+    w=Math.max(view.scrollWidth||0, title.scrollWidth||0, 980);
+  }catch(e){}
+  document.body.classList.remove('measuring');
+  if(!h) return 1;
+  return Math.max(0.35, Math.min(1, PW/w, PH/h));
+}
 function doPrint(light){
   // Print a snapshot of the schedule (the board), not the edit screen.
   if(mode!=='board'){ mode='board'; render(); }
   document.body.classList.toggle('print-light', !!light);
+  // auto-fit the board to one page (recomputed each print — depends on line count)
+  document.documentElement.style.setProperty('--pzoom', String(measurePrintScale()));
   setTimeout(()=>window.print(), 60);
 }
 document.getElementById('printBtn').onclick=()=>doPrint(false);
 document.getElementById('printBtnLight').onclick=()=>doPrint(true);
+// also auto-fit when the browser's own Print (Ctrl+P) is used, not just our buttons
+window.addEventListener('beforeprint',()=>{ if(mode==='board') document.documentElement.style.setProperty('--pzoom', String(measurePrintScale())); });
 window.addEventListener('afterprint',()=>document.body.classList.remove('print-light'));
 
 /* live clock */
