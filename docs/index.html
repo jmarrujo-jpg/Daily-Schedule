@@ -424,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v58';
+var APP_VERSION = 'v59';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1039,99 +1039,71 @@ function exceptionViolations(){
   });
   return out;
 }
-/* Fill a line's positions from the roster roles, best-available-by-rank. For
-   each position, gather available people (not off / not on a press / not
-   excepted for this line+position) who can staff it, pick the best tier present;
-   fill only if exactly one person holds that best tier, else leave blank. Ties
-   at the best tier stay blank. Replaces whatever was there. Fires on Run 1st. */
-function autofillLine(l){
-  const off=unavailableForLines();
-  const lineNo=String(l.lineNo||'').trim();
-  if(!l.ops) l.ops={};
-  // Only auto-fill the positions that auto-fill on this line. Frame & Straps off
-  // Line 6 is left exactly as it was (any hand-picked name stays put).
-  const roles=OP_ROLES.filter(([k])=> autofillsHere(k, lineNo));
-  // For each position, find its best AVAILABLE tier and everyone who holds it there.
-  const best={};
-  roles.forEach(([posKey])=>{
-    let bt=99, names=[];
-    roster.forEach(p=>{
-      if(off.has(p.name.trim().toLowerCase())) return;
-      if(excBlocks(p, lineNo, posKey)) return;
-      const tier=posTier(p, posKey);
-      if(tier<=0) return;
-      if(tier<bt){ bt=tier; names=[p.name]; }
-      else if(tier===bt){ names.push(p.name); }
-    });
-    best[posKey]={tier:bt, names};
-  });
+/* Statuses that carry a crew (people count as "busy" so they can't be placed on
+   another line), and the subset that AUTO-STAFFS (empty spots get filled). A
+   Mechanics Run carries whoever is put on it by hand, but never auto-staffs. */
+const CREW_STATUSES     = {run1:1, run2:1, backup:1, rwr:1, mechRun:1};
+const AUTOFILL_STATUSES = {run1:1, run2:1, backup:1, rwr:1};
+function carriesCrew(l){ return !!CREW_STATUSES[statusOf(l)]; }
+function autoStaffs(l){ return !!AUTOFILL_STATUSES[statusOf(l)]; }
 
-  // Assign tier by tier (Primary before Secondary before Tertiary) so a person
-  // contested between their own primary spot and someone else's secondary spot
-  // is claimed by the primary. Each position only ever fills from ITS OWN best
-  // tier; a genuine tie at that tier stays blank for a human to decide. Nobody
-  // is placed in two positions on the same line.
+/* Board-wide crew solve. Every operator lands on AT MOST ONE line: we keep the
+   people already validly placed (hand-picked or from an earlier solve), drop
+   anyone who is absent / on vacation / on a press / excepted / double-booked, and
+   then fill the empty spots on the running lines — Primary roles first, then
+   Secondary, then Tertiary, taking each line in board order (Line 6 gets first
+   pick). Frame & Straps only auto-fills on Line 6. A spot with no one left for it
+   stays blank for a human to sort out. Hand edits survive the next solve. */
+function assignBoard(){
+  const off=unavailableForLines();
   const taken=new Set();
-  for(let t=1;t<=3;t++){
-    roles.forEach(([posKey])=>{
-      if(best[posKey].tier!==t) return;
-      const avail=best[posKey].names.filter(n=> !taken.has(n.trim().toLowerCase()));
-      if(avail.length===1){ l.ops[posKey]=[avail[0]]; taken.add(avail[0].trim().toLowerCase()); }
-      else l.ops[posKey]=[""];
+  const eligible=(name,lineNo,posKey)=>{
+    const p=rosterEntry(name); if(!p) return false;
+    if(off.has(name.trim().toLowerCase())) return false;
+    if(excBlocks(p,lineNo,posKey)) return false;
+    return posTier(p,posKey)>0;
+  };
+  // Pass 1 — keep the people already validly on a crewed line; clear the rest.
+  board.lines.forEach(l=>{
+    if(!l.ops) l.ops={};
+    OP_ROLES.forEach(([k])=>{ if(!Array.isArray(l.ops[k])) l.ops[k]=(l.ops[k]==null||l.ops[k]==='')?[""]:[String(l.ops[k])]; });
+    if(l.hidden || !carriesCrew(l)){ return; }   // idle / change-over / hidden hold no crew
+    const lineNo=String(l.lineNo||'').trim();
+    OP_ROLES.forEach(([posKey])=>{
+      l.ops[posKey]=l.ops[posKey].map(n=>{
+        const name=String(n||'').trim(); if(!name) return "";
+        const key=name.toLowerCase();
+        if(taken.has(key)) return "";                     // already placed elsewhere → drop the dupe
+        if(!eligible(name,lineNo,posKey)) return "";      // absent / ineligible → drop
+        taken.add(key); return name;
+      });
+      if(!l.ops[posKey].length) l.ops[posKey]=[""];
+    });
+  });
+  // Pass 2 — fill the empty first-slot of each auto-staffing line, best rank first.
+  for(let tier=1; tier<=3; tier++){
+    board.lines.forEach(l=>{
+      if(l.hidden || !autoStaffs(l)) return;
+      const lineNo=String(l.lineNo||'').trim();
+      OP_ROLES.forEach(([posKey])=>{
+        if(!autofillsHere(posKey,lineNo)) return;         // Frame & Straps only on Line 6
+        const arr=l.ops[posKey];
+        if(arr[0] && arr[0].trim()) return;               // spot already filled/kept
+        const pick=roster.find(p=>{
+          const key=p.name.trim().toLowerCase();
+          if(off.has(key) || taken.has(key)) return false;
+          if(excBlocks(p,lineNo,posKey)) return false;
+          return posTier(p,posKey)===tier;
+        });
+        if(pick){ arr[0]=pick.name; taken.add(pick.name.trim().toLowerCase()); }
+      });
     });
   }
-  roles.forEach(([posKey])=>{ if(best[posKey].tier>3) l.ops[posKey]=[""]; });   // no candidate at all
 }
 /* Idle and Change-Over lines carry no crew — wipe every position clean. */
 function clearLineCrew(l){
   if(!l.ops) l.ops={};
   OP_ROLES.forEach(([k])=>{ l.ops[k]=[""]; });
-}
-/* Best single available person for one position on one line, excluding anyone
-   off (absent / vacation / on a press), already placed on this line, or excepted
-   here. Returns their name only if exactly one person holds the best tier; a tie
-   or no candidate returns "" (leave the spot for a human). */
-function bestAvailableFor(lineNo, posKey, taken){
-  const off=unavailableForLines();
-  let bt=99, names=[];
-  roster.forEach(p=>{
-    const key=p.name.trim().toLowerCase();
-    if(off.has(key) || taken.has(key)) return;
-    if(excBlocks(p, lineNo, posKey)) return;
-    const tier=posTier(p, posKey);
-    if(tier<=0) return;
-    if(tier<bt){ bt=tier; names=[p.name]; }
-    else if(tier===bt){ names.push(p.name); }
-  });
-  return names.length===1 ? names[0] : "";
-}
-/* When someone is marked absent / on vacation (or put on a press), pull them out
-   of any running line's crew and try to backfill their spot with the next best
-   available person — but only for positions that auto-fill on that line, so Frame
-   & Straps off Line 6 is just cleared, never auto-picked. No clear pick, or a
-   non-auto-filling position, leaves the spot blank. */
-function reconcileUnavailable(){
-  const off=unavailableForLines();
-  board.lines.forEach(l=>{
-    if(statusOf(l)==='') return;                 // idle lines carry no crew
-    if(!l.ops) return;
-    const lineNo=String(l.lineNo||'').trim();
-    // normalize every position to an array so we can edit slots in place
-    OP_ROLES.forEach(([k])=>{ if(!Array.isArray(l.ops[k])) l.ops[k]=(l.ops[k]==null||l.ops[k]==='')?[""]:[String(l.ops[k])]; });
-    // names still validly on this line, so a backfill never double-books
-    const onLine=new Set();
-    OP_ROLES.forEach(([k])=> l.ops[k].forEach(n=>{ const kk=String(n||'').trim().toLowerCase(); if(kk && !off.has(kk)) onLine.add(kk); }));
-    OP_ROLES.forEach(([posKey])=>{
-      const arr=l.ops[posKey];
-      for(let i=0;i<arr.length;i++){
-        const key=String(arr[i]||'').trim().toLowerCase();
-        if(!key || !off.has(key)) continue;      // only replace people who are now unavailable
-        const repl=autofillsHere(posKey, lineNo) ? bestAvailableFor(lineNo, posKey, onLine) : "";
-        arr[i]=repl;
-        if(repl) onLine.add(repl.trim().toLowerCase());
-      }
-    });
-  });
 }
 function updateCoChip(){
   const n = changeoverCount(), el=document.getElementById('coChip');
@@ -1557,13 +1529,14 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.dataset.f){
       const f=t.dataset.f; l[f]=t.value;
       if(f==='status'){
-        if(t.value==='run1') autofillLine(l);                       // drop in the best-available crew
-        else if(t.value==='' || t.value==='co') clearLineCrew(l);   // idle / change-over carry no crew
+        if(t.value==='' || t.value==='co') clearLineCrew(l);        // idle / change-over carry no crew
+        assignBoard();                                              // re-balance the crew across all running lines
         scheduleSave(); render(); return;                           // recolor card + header
       }
       if(f==='size'){
         if(t.value && !l.status) l.status='run1';                  // picked a size → assume running
         else if(!t.value) l.status='';                             // cleared size → idle
+        assignBoard();
         scheduleSave(); render(); return;
       }
       if(f==='lineNo'){
@@ -1590,10 +1563,10 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.value==='__add__'){
       const name=(prompt('Add a new name to the roster:')||'').trim();
       if(name){ rosterAdd(name); board.staff[key][i]=name; }
-      reconcileUnavailable(); scheduleSave(); render(); return;
+      assignBoard(); scheduleSave(); render(); return;
     }
     board.staff[key][i]=t.value;
-    reconcileUnavailable();                     // pull the newly-absent person off any line + backfill
+    assignBoard();                              // pull the newly-absent person off any line + re-balance
     scheduleSave(); render(); return;
   }
   if(t.dataset.pressunit!==undefined){                          // which press this row is
@@ -1613,9 +1586,11 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.value==='__add__'){
       const name=(prompt('Add a new name to the roster:')||'').trim();
       if(name){ rosterAdd(name); row.ops[i]=name; }
-      scheduleSave(); render(); return;
+      assignBoard(); scheduleSave(); render(); return;
     }
-    row.ops[i]=t.value; scheduleSave(); return;
+    row.ops[i]=t.value;
+    assignBoard();                              // a press operator is no longer free for a line
+    scheduleSave(); render(); return;
   }
   if(t.dataset.announce!==undefined){
     board.announce=t.value; scheduleSave();
