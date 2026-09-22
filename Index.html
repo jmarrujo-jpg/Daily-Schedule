@@ -92,22 +92,24 @@
   /* jobs — one or more products running on the line (same size, different customer) */
   .jobs{display:flex;flex-direction:column}
   .job{padding:7px 0}
-  .job + .job{border-top:1px dashed var(--edge)}
-  .job-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-  .job-cust{font-family:var(--disp);font-weight:700;font-size:26px;text-transform:uppercase;letter-spacing:.02em;color:var(--text)}
-  .job-code{font-family:var(--mono);font-weight:600;font-size:16px;color:var(--amber);
-    background:rgba(255,179,0,.08);border:1px solid var(--amber-d);border-radius:5px;padding:3px 9px}
-  /* stripe badge (I/S / O/S) — its own color so it reads apart from the code */
+  .job + .job{border-top:1px dashed var(--edge);margin-top:3px}
+  .job-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .job-cust{font-family:var(--disp);font-weight:700;font-size:27px;text-transform:uppercase;letter-spacing:.02em;color:var(--text)}
+  /* stripe badge (I/S / O/S) — its own color so it reads apart from the rest */
   .job-stripe{display:inline-flex;gap:4px;align-self:center}
   .stripe-tag{font-family:var(--disp);font-weight:800;font-size:16px;letter-spacing:.04em;color:var(--purple);
     background:rgba(161,117,255,.14);border:1px solid var(--purple);border-radius:5px;padding:3px 9px}
-  .job-meta{display:flex;gap:20px;flex-wrap:wrap;align-items:baseline;margin-top:3px;font-size:14px;color:var(--muted)}
-  .job-meta b{color:var(--text);font-family:var(--mono);font-weight:600;font-size:15px}
-  .job-meta .lbl{font-family:var(--disp);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
-  .job-meta .done{color:var(--green);font-weight:700}
-  /* remaining ("Left") is the big number; order/made yesterday are small print */
-  .job-meta b{font-size:20px}
-  .job-meta .ord-sub{font-size:12px;color:var(--dim);font-weight:500}
+  /* product facts — labeled cells (Product / Ends / Left), same language as crew */
+  .jobfacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .fact{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 130px;
+    background:rgba(255,255,255,.03);border:1px solid var(--edge);border-radius:7px;padding:7px 11px}
+  .fact .flbl{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.06em}
+  .fact .fval{font-family:var(--disp);font-weight:700;font-size:21px;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .fact .fval.mono{font-family:var(--mono);font-weight:600;font-size:19px}
+  .fact .fval.code{color:var(--amber)}
+  .fact .fsub{font-size:11px;color:var(--dim);font-weight:500}
+  .fact .fsub.done{color:var(--green);font-weight:700;font-size:13px}
 
   /* crew — each position is a small cell: role label on top, name below. Two per
      row, so every tile reads the same way and names line up in clean columns. */
@@ -432,7 +434,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v69';
+var APP_VERSION = 'v70';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1212,15 +1214,15 @@ function render(){
 }
 
 /* ============================ Render: BOARD (TV) ============================ */
-function orderInline(j){
+function orderFact(j){
   const o=num(j.order);
-  if(!o) return '';                       // no order qty → show nothing (no "standing order")
+  if(!o) return '';                       // no order qty → no cell (no "standing order")
   const m=num(j.made);
-  if(m>=o) return `<span><span class="lbl">Order</span> <b>${commas(o)}</b> · <span class="done">✓ complete</span></span>`;
-  if(!m) return `<span><span class="lbl">Left</span> <b>${commas(o)}</b> <span class="ord-sub">to run</span></span>`;
+  if(m>=o) return `<div class="fact"><span class="flbl">Order</span><span class="fval mono">${commas(o)}</span><span class="fsub done">✓ complete</span></div>`;
+  if(!m) return `<div class="fact"><span class="flbl">Left to run</span><span class="fval mono">${commas(o)}</span></div>`;
   const left=Math.max(o-m,0);
   // the big number is what's LEFT; the order total + made yesterday are the small print
-  return `<span><span class="lbl">Left</span> <b>${commas(left)}</b> <span class="ord-sub">(${commas(o)} order · ${commas(m)} made yesterday)</span></span>`;
+  return `<div class="fact"><span class="flbl">Left to run</span><span class="fval mono">${commas(left)}</span><span class="fsub">${commas(o)} order · ${commas(m)} made</span></div>`;
 }
 function cardHTML(l){
   const st=statusOf(l), sd=STATUS[st];
@@ -1230,17 +1232,18 @@ function cardHTML(l){
     const palHTML = pal.length
       ? `<div class="setup"><span class="setup-lbl">Set-up</span>${pal.map(p=>`<span class="pal">${esc(p)}</span>`).join('')}</div>`
       : '';
+    const facts = [
+      j.code ? `<div class="fact"><span class="flbl">Product</span><span class="fval mono code">${esc(j.code)}</span></div>` : '',
+      j.ends ? `<div class="fact"><span class="flbl">Ends</span><span class="fval">${esc(j.ends)}</span></div>` : '',
+      orderFact(j)
+    ].filter(Boolean).join('');
     return `
     <div class="job">
       <div class="job-head">
         ${j.cust?`<span class="job-cust">${esc(j.cust)}</span>`:''}
-        ${j.code?`<span class="job-code">${esc(j.code)}</span>`:''}
         ${(j.stripe&&j.stripe.length)?`<span class="job-stripe" title="Stripe (inside / outside)">${stripeArr(j.stripe).map(s=>`<span class="stripe-tag">${esc(s)}</span>`).join('')}</span>`:''}
       </div>
-      <div class="job-meta">
-        ${j.ends?`<span><span class="lbl">Ends</span> <b>${esc(j.ends)}</b></span>`:''}
-        ${orderInline(j)}
-      </div>
+      ${facts?`<div class="jobfacts">${facts}</div>`:''}
       ${palHTML}
     </div>`;}).join('');
   // Idle = the line is ready but not running today, so it carries no crew on the
