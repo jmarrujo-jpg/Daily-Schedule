@@ -333,15 +333,6 @@
   /* print: two options — color (screen look) and white (writable). Both fit
      one landscape sheet and carry a centered title header with the date. */
   .print-title{display:none}
-  /* off-screen mirror of the print layout, used only to MEASURE the board so we
-     can auto-scale it to fit one page (see measurePrintScale) */
-  body.measuring .topbar,body.measuring .foot-note,body.measuring #conflictBox{display:none !important}
-  body.measuring .print-title{display:flex !important}
-  body.measuring #view,body.measuring .print-title{position:absolute !important;left:-10000px !important;top:0 !important;width:980px !important;padding:0 !important}
-  body.measuring .layout{display:block !important}
-  body.measuring .rail{display:grid !important;grid-template-columns:repeat(4,minmax(0,1fr)) !important;gap:10px !important;margin-top:12px !important}
-  body.measuring .board-grid{grid-auto-rows:auto !important}
-
   @media print{
     @page{size:landscape;margin:0.3in}
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
@@ -352,14 +343,47 @@
        (--pzoom, computed to fit one landscape page) shrinks the whole board so
        it prints on one sheet at 100% with default margins — no manual scaling. */
     .topbar,.foot-note,#conflictBox{display:none !important}
-    .print-title,main{zoom:var(--pzoom,1)}
     main{padding:0 !important}
-    /* Paper is squarer than the TV. Put the board full-width and the side rail as
-       a compact strip below it, so the sheet is filled and everything prints as
-       large as possible. Idle/CO tiles keep their natural (short) height. */
+    /* Paper is squarer than the TV, so the board goes full-width with the side
+       rail as a compact strip below it. Sizes below are shrunk from the screen so
+       the whole board + rail + banner fit ONE landscape sheet at 100% with default
+       margins — deterministic, no runtime scaling, nothing clipped. */
     .layout{display:block !important}
-    .rail{display:grid !important;grid-template-columns:repeat(4,minmax(0,1fr)) !important;gap:10px !important;margin-top:12px !important}
-    .board-grid{grid-auto-rows:auto !important}
+    .rail{display:grid !important;grid-template-columns:repeat(4,minmax(0,1fr)) !important;gap:8px !important;margin-top:8px !important}
+    .board-grid{grid-auto-rows:auto !important;gap:9px !important}
+    .board-grid{gap:8px !important}
+    .line-card{padding:6px 10px !important;gap:4px !important}
+    .lc-no,.status-pill{font-size:12px !important;padding:4px 8px !important}
+    .lc-size{font-size:24px !important}
+    .job-cust{font-size:15px !important}
+    .lc-desc{font-size:10px !important}
+    .jobfacts{gap:5px !important;margin-top:5px !important}
+    .fact{padding:4px 7px !important}
+    .fact .flbl{font-size:8.5px !important}
+    .fact .fval{font-size:14px !important}
+    .fact .fval.mono{font-size:13px !important}
+    .fact .fsub{font-size:8.5px !important}
+    .setup{padding-top:5px !important}
+    .setup-lbl{font-size:8.5px !important}
+    .pal{font-size:10px !important;padding:2px 6px !important}
+    .stripe-tag{font-size:11px !important;padding:2px 6px !important}
+    /* crew as 3 columns on paper (2 rows instead of 3) to keep each tile short */
+    .ops{grid-template-columns:repeat(3,minmax(0,1fr)) !important;gap:4px !important;padding-top:5px !important}
+    .op{padding:3px 7px !important}
+    .op .role{font-size:8.5px !important}
+    .op .who{min-height:14px !important}
+    .op .who .n1,.op .who.empty{font-size:13px !important}
+    .op .who .nx{font-size:9px !important}
+    .rail h3{font-size:11px !important;padding-bottom:3px !important;margin-bottom:4px !important}
+    .rail li{font-size:11px !important}
+    .rail .press-no{font-size:10px !important;min-width:60px !important}
+    .rail .press-op{font-size:12px !important}
+    .rail .press-detail{font-size:10px !important;padding-left:0 !important}
+    .rail .none{font-size:11px !important}
+    .legend{padding:4px 2px 2px !important;gap:12px !important}
+    .legend .li{font-size:10px !important}
+    .legend .sw{width:10px !important;height:10px !important}
+    .safety{font-size:15px !important;padding:5px !important;margin-top:4px !important}
     .print-title{display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--disp);
       font-weight:800;font-size:20px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
       margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid var(--edge2)}
@@ -435,7 +459,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v73';
+var APP_VERSION = 'v74';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1807,33 +1831,14 @@ document.getElementById('fsBtn').onclick=()=>{
   else document.exitFullscreen&&document.exitFullscreen();
 };
 document.addEventListener('fullscreenchange',()=>document.body.classList.toggle('fs', TV_MODE || !!document.fullscreenElement));
-/* Measure the board at the print layout width and return a scale that fits it
-   onto one landscape sheet, so printing needs no manual "70% / minimum margins". */
-function measurePrintScale(){
-  const PW=980, PH=735;   // landscape Letter printable area (px @96dpi, ~0.3in margins), a touch conservative
-  const title=document.getElementById('printTitle'), view=document.getElementById('view');
-  document.body.classList.add('measuring');
-  let h=0, w=0;
-  try{
-    h=(title.offsetHeight||0)+(view.scrollHeight||0);
-    w=Math.max(view.scrollWidth||0, title.scrollWidth||0, 980);
-  }catch(e){}
-  document.body.classList.remove('measuring');
-  if(!h) return 1;
-  return Math.max(0.35, Math.min(1, PW/w, PH/h));
-}
 function doPrint(light){
   // Print a snapshot of the schedule (the board), not the edit screen.
   if(mode!=='board'){ mode='board'; render(); }
   document.body.classList.toggle('print-light', !!light);
-  // auto-fit the board to one page (recomputed each print — depends on line count)
-  document.documentElement.style.setProperty('--pzoom', String(measurePrintScale()));
   setTimeout(()=>window.print(), 60);
 }
 document.getElementById('printBtn').onclick=()=>doPrint(false);
 document.getElementById('printBtnLight').onclick=()=>doPrint(true);
-// also auto-fit when the browser's own Print (Ctrl+P) is used, not just our buttons
-window.addEventListener('beforeprint',()=>{ if(mode==='board') document.documentElement.style.setProperty('--pzoom', String(measurePrintScale())); });
 window.addEventListener('afterprint',()=>document.body.classList.remove('print-light'));
 
 /* live clock */
