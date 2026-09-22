@@ -109,14 +109,16 @@
   .job-meta b{font-size:20px}
   .job-meta .ord-sub{font-size:12px;color:var(--dim);font-weight:500}
 
-  /* crew — each position holds up to 3 people (primary + up to 2 more, e.g. a trainee) */
-  .ops{display:grid;grid-template-columns:1fr 1fr;gap:5px 20px;margin-top:2px;padding-top:8px;border-top:1px solid var(--edge)}
-  .op{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.05);padding:5px 0}
-  .op .role{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.05em;flex:none}
-  .op .who{display:flex;flex-direction:column;align-items:flex-end;gap:0;font-family:var(--disp);text-align:right}
-  .op .who .n1{font-weight:600;font-size:20px;letter-spacing:.01em}
-  .op .who .nx{font-weight:600;font-size:13.5px;color:var(--amber);letter-spacing:.02em}
-  .op .who.empty{font-weight:600;font-size:20px;color:var(--dim)}
+  /* crew — each position is a small cell: role label on top, name below. Two per
+     row, so every tile reads the same way and names line up in clean columns. */
+  .ops{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;padding-top:12px;border-top:1px solid var(--edge)}
+  .op{display:flex;flex-direction:column;gap:2px;min-width:0;background:rgba(255,255,255,.03);
+    border:1px solid var(--edge);border-radius:7px;padding:7px 11px}
+  .op .role{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.06em}
+  .op .who{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-family:var(--disp);text-align:left;min-height:25px}
+  .op .who .n1{font-weight:700;font-size:21px;letter-spacing:.01em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .op .who .nx{font-weight:600;font-size:13px;color:var(--amber);letter-spacing:.02em}
+  .op .who.empty{font-weight:600;font-size:21px;color:var(--dim)}
 
   /* side rail */
   .rail{display:flex;flex-direction:column;gap:12px}
@@ -430,7 +432,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v68';
+var APP_VERSION = 'v69';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
