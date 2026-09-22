@@ -338,7 +338,8 @@
   body.measuring .topbar,body.measuring .foot-note,body.measuring #conflictBox{display:none !important}
   body.measuring .print-title{display:flex !important}
   body.measuring #view,body.measuring .print-title{position:absolute !important;left:-10000px !important;top:0 !important;width:980px !important;padding:0 !important}
-  body.measuring .layout{display:grid !important;grid-template-columns:1fr 320px !important;gap:14px !important;align-items:start}
+  body.measuring .layout{display:block !important}
+  body.measuring .rail{display:grid !important;grid-template-columns:repeat(4,minmax(0,1fr)) !important;gap:10px !important;margin-top:12px !important}
   body.measuring .board-grid{grid-auto-rows:auto !important}
 
   @media print{
@@ -353,15 +354,16 @@
     .topbar,.foot-note,#conflictBox{display:none !important}
     .print-title,main{zoom:var(--pzoom,1)}
     main{padding:0 !important}
-    /* on paper, let idle / change-over tiles be their natural (short) height so the
-       running lines print larger and the sheet is used well */
+    /* Paper is squarer than the TV. Put the board full-width and the side rail as
+       a compact strip below it, so the sheet is filled and everything prints as
+       large as possible. Idle/CO tiles keep their natural (short) height. */
+    .layout{display:block !important}
+    .rail{display:grid !important;grid-template-columns:repeat(4,minmax(0,1fr)) !important;gap:10px !important;margin-top:12px !important}
     .board-grid{grid-auto-rows:auto !important}
     .print-title{display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--disp);
       font-weight:800;font-size:20px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
       margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid var(--edge2)}
     .print-logo{height:30px;width:auto;background:#fff;border-radius:5px;padding:2px 4px}
-    /* keep the TV board + side rail side by side (the mobile 1-col rule must not win) */
-    .layout{display:grid !important;grid-template-columns:1fr 320px !important;gap:14px !important;align-items:start}
     .line-card,.panel{break-inside:avoid;box-shadow:none !important}
     .status-pill.co{animation:none !important}
 
@@ -433,7 +435,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v72';
+var APP_VERSION = 'v73';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
