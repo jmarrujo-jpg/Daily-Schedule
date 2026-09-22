@@ -13,6 +13,7 @@
     --text:#eef3f8; --muted:#8593a0; --dim:#54626f;
     --amber:#ffb300; --amber-d:#c98a00;
     --green:#29c467; --red:#ef4444; --blue:#3aa0ff; --purple:#a175ff; --cyan:#22c3c3;
+    --teal:#2dd4bf; --teal-d:#0f9e8e;
     --disp:'Barlow Condensed', sans-serif;
     --body:'Barlow', sans-serif;
     --mono:'IBM Plex Mono', monospace;
@@ -69,8 +70,8 @@
   .line-card.idle{opacity:.66}
 
   .lc-head{display:flex;align-items:flex-start;gap:12px}
-  .lc-no{font-family:var(--disp);font-weight:700;font-size:16px;letter-spacing:.08em;color:#0d1117;
-    background:var(--text);border-radius:5px;padding:3px 11px;text-transform:uppercase;flex:none;margin-top:4px}
+  .lc-no{font-family:var(--disp);font-weight:700;font-size:15px;letter-spacing:.08em;color:#0d1117;
+    background:var(--text);border-radius:5px;padding:4px 11px;text-transform:uppercase;flex:none}
   .lc-headtxt{flex:1;min-width:0}
   .lc-po{flex:none;align-self:flex-start;font-family:var(--mono);font-weight:700;font-size:15px;color:var(--text);
     background:var(--edge-soft,rgba(255,255,255,.05));border:1px solid var(--edge);border-radius:6px;padding:4px 10px;white-space:nowrap}
@@ -78,8 +79,8 @@
   /* pallet set-up chips */
   .setup{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding-top:8px;border-top:1px solid var(--edge)}
   .setup-lbl{font-family:var(--disp);font-weight:700;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-right:2px}
-  .pal{font-family:var(--disp);font-weight:700;font-size:12.5px;letter-spacing:.02em;color:var(--blue);
-    background:rgba(58,160,255,.1);border:1px solid rgba(58,160,255,.35);border-radius:5px;padding:3px 9px}
+  .pal{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.03em;color:#04211d;
+    background:var(--teal);border:1px solid var(--teal-d);border-radius:5px;padding:3px 10px}
   .lc-row1{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   .status-pill{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:.06em;text-transform:uppercase;
     border-radius:7px;padding:6px 15px;line-height:1;white-space:nowrap;flex:none}
@@ -110,7 +111,7 @@
 
   /* crew — each position holds up to 3 people (primary + up to 2 more, e.g. a trainee) */
   .ops{display:grid;grid-template-columns:1fr 1fr;gap:5px 20px;margin-top:2px;padding-top:8px;border-top:1px solid var(--edge)}
-  .op{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px dotted #26313d;padding:4px 0}
+  .op{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.05);padding:5px 0}
   .op .role{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.05em;flex:none}
   .op .who{display:flex;flex-direction:column;align-items:flex-end;gap:0;font-family:var(--disp);text-align:right}
   .op .who .n1{font-weight:600;font-size:20px;letter-spacing:.01em}
@@ -429,7 +430,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v65';
+var APP_VERSION = 'v66';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1251,9 +1252,9 @@ function cardHTML(l){
   }).join('');
   return `<div class="line-card${st===''?' idle':''}" style="border-top-color:${sd.color}">
     <div class="lc-head">
-      <span class="lc-no">Line ${esc(l.lineNo)}</span>
       <div class="lc-headtxt">
         <div class="lc-row1">
+          <span class="lc-no">Line ${esc(l.lineNo)}</span>
           <span class="status-pill${st==='co'?' co':''}" style="background:${sd.color};color:${sd.fg}">${sd.pill}</span>
           <span class="lc-size">${esc(l.size)||'<span style="color:var(--dim)">—</span>'}</span>
         </div>
@@ -1339,7 +1340,7 @@ function nameOptions(cur){
 function posInputs(l, idx, k){
   const arr = opArr(l,k); const shown = arr.length?arr:[""];
   const selects = shown.map((n,i)=>
-    `<span class="nsel"><select class="${i>0?'trainee':''}${conflictClass(n)}" data-line="${idx}" data-op="${k}" data-i="${i}">${nameOptions(n)}</select><button class="rmname" data-line="${idx}" data-rmop="${k}" data-i="${i}" title="Remove">✕</button></span>`).join('');
+    `<span class="nsel"><select class="${i>0?'trainee':''}${conflictClass(n)}" data-line="${idx}" data-op="${k}" data-i="${i}">${nameOptions(n)}</select>${i>0?`<button class="rmname" data-line="${idx}" data-rmop="${k}" data-i="${i}" title="Remove">✕</button>`:''}</span>`).join('');
   const add = shown.length<MAX_PER_POS ? `<button class="addname" data-line="${idx}" data-addop="${k}">＋ add person</button>` : '';
   return `<div class="names">${selects}${add}</div>`;
 }
@@ -1364,7 +1365,7 @@ function pressEditRows(){
   return board.staff.presses.map((row,ri)=>{
     const ops=(row.ops&&row.ops.length)?row.ops:[""];
     const nameSels=ops.map((n,i)=>
-      `<span class="nsel"><select class="${i>0?'trainee':''}${conflictClass(n)}" data-pressrow="${ri}" data-i="${i}">${nameOptions(n)}</select><button class="rmname" data-rmpressperson="${ri}" data-i="${i}" title="Remove">✕</button></span>`).join('');
+      `<span class="nsel"><select class="${i>0?'trainee':''}${conflictClass(n)}" data-pressrow="${ri}" data-i="${i}">${nameOptions(n)}</select>${i>0?`<button class="rmname" data-rmpressperson="${ri}" data-i="${i}" title="Remove">✕</button>`:''}</span>`).join('');
     const addPerson = ops.length<MAX_PER_POS ? `<button class="addname" data-addpressperson="${ri}">＋ person</button>`:'';
     const modeOpts = PRESS_MODES.map(m=>`<option value="${m}" ${m===(row.mode||'')?'selected':''}>${m||'— open/shipping —'}</option>`).join('');
     return `<div class="pressrow">
