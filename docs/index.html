@@ -424,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v62';
+var APP_VERSION = 'v63';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1129,17 +1129,22 @@ function autofillLine(l){
   OP_ROLES.forEach(([k])=>{ if(!autofillsHere(k,lineNo)) return; l.ops[k][0]=""; open.push(k); });
   solveLine(l, open);
 }
-/* After someone leaves a running line (absent / vacation / press), refill any now
-   empty CRITICAL spot from the free pool — so a critical position is never left
-   blank when it can be covered. Non-critical spots (forklift) stay as they are. */
+/* After someone leaves a running line (absent / vacation / press), make sure every
+   CRITICAL spot is covered if the available crew can cover it. If all criticals are
+   already filled, nothing is touched. If one is empty, first try to fill the empty
+   spots without moving anyone; if a critical is STILL empty, re-solve the whole line
+   from scratch so a scarce spot can pull its person back from one others can cover
+   (this is why marking people absent one-at-a-time now matches idle→Run 1st). */
 function refillCriticals(l){
   prepOps(l);
   const lineNo=String(l.lineNo||'').trim();
   const off=unavailableForLines();
   OP_ROLES.forEach(([k])=>{ if(off.has(firstName(l,k).toLowerCase())) l.ops[k][0]=""; });
-  const open=OP_ROLES.filter(([k])=>autofillsHere(k,lineNo)).map(([k])=>k)
-    .filter(k=> isCritical(k,lineNo) && !firstName(l,k));
-  solveLine(l, open);
+  const crit=OP_ROLES.filter(([k])=>autofillsHere(k,lineNo)).map(([k])=>k).filter(k=> isCritical(k,lineNo));
+  if(!crit.some(k=> !firstName(l,k))) return;              // every critical covered → leave the line as-is
+  const emptyNow=OP_ROLES.filter(([k])=>autofillsHere(k,lineNo)).map(([k])=>k).filter(k=> !firstName(l,k));
+  solveLine(l, emptyNow);                                  // 1) fill blanks without disturbing anyone
+  if(crit.some(k=> !firstName(l,k))) autofillLine(l);      // 2) still a gap → full re-solve to reshuffle coverage
 }
 /* Remove anyone now unavailable (absent / on vacation / on a press) from every
    line's crew, leaving their spot blank. No backfill, no reshuffle — the rest of
@@ -1618,8 +1623,8 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.dataset.f){
       const f=t.dataset.f; l[f]=t.value;
       if(f==='status'){
-        if(t.value==='' || t.value==='co') clearLineCrew(l);        // idle / change-over carry no crew
-        else if(t.value==='run1') autofillLine(l);                  // auto-staff ONLY on Run 1st
+        if(t.value==='run1') autofillLine(l);                       // Run 1st auto-staffs the crew
+        else clearLineCrew(l);                                      // every other status auto-removes the crew (manual entry still allowed)
         scheduleSave(); render(); return;                           // recolor card + header
       }
       if(f==='size'){
