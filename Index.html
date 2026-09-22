@@ -334,58 +334,44 @@
      one landscape sheet and carry a centered title header with the date. */
   .print-title{display:none}
   @media print{
-    @page{size:landscape;margin:0}   /* we control the inset ourselves via body padding */
+    @page{size:landscape;margin:0.35in}
     *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
     html,body{background:var(--bg) !important;color:var(--text) !important}
-    /* 0.25in of guaranteed whitespace on every side (title + board), clear of the
-       printer dead zone — body padding can't be overridden like @page can */
-    body{padding:0.25in !important}
+    body{padding:0 !important;min-height:0 !important;display:block !important}
+    /* Print the board EXACTLY as it looks on screen — only the app chrome is
+       hidden and a dated title added. No font/size overrides, so the printout
+       matches the design (the browser's fit-to-page scales it down to size). */
     .topbar,.foot-note,#conflictBox{display:none !important}
     main{padding:0 !important}
     .print-title{display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--disp);
-      font-weight:800;font-size:19px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
-      margin:0 0 9px;padding-bottom:7px;border-bottom:2px solid var(--edge2)}
+      font-weight:800;font-size:20px;letter-spacing:.05em;text-transform:uppercase;color:var(--text);
+      margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid var(--edge2)}
     .print-logo{height:30px;width:auto;background:#fff;border-radius:5px;padding:2px 4px}
-    /* keep the on-screen adaptive board + side rail; the mobile 1-col rule must not win */
-    .layout{display:grid !important;grid-template-columns:1fr 210px !important;gap:9px !important;align-items:start}
-    .board-grid{gap:9px !important}
+    /* keep the TV board + side rail side by side (the mobile 1-col rule must not win) */
+    .layout{display:grid !important;grid-template-columns:1fr 320px !important;gap:14px !important;align-items:start}
     .line-card,.panel{break-inside:avoid;box-shadow:none !important}
-    .line-card{padding:8px 10px;gap:5px}
-    .status-pill{font-size:14px !important;padding:3px 9px !important}
     .status-pill.co{animation:none !important}
-    .lc-size{font-size:26px !important}
-    .lc-no{font-size:11px;padding:2px 7px;margin-top:2px}
-    .job-cust{font-size:16px !important}
-    .job{padding:4px 0}
-    .op{padding:2px 0}
-    .op .role{font-size:10px !important}
-    .op .who .n1{font-size:13px !important}
-    .op .who .nx{font-size:11px !important}
-    .ops{gap:2px 12px !important;padding-top:5px}
-    .rail li{font-size:13px}
-    .rail h3{font-size:12px}
-    .rail .panel{padding:7px 9px}
-    .setup{padding-top:5px}
-    .legend{margin-top:6px}
-    .safety{font-size:14px !important;padding:6px !important;margin-top:6px}
 
-    /* WHITE option: light, ink-friendly background you can write on */
+    /* WHITE option: same layout, but a light ink-friendly background you can write on */
     body.print-light{background:#fff !important;color:#111 !important}
     body.print-light .print-title{color:#111 !important;border-bottom-color:#999 !important}
     body.print-light .line-card,body.print-light .panel{background:#fff !important;border:1px solid #b7b7b7 !important}
+    body.print-light .op,body.print-light .fact{background:#f6f8fa !important;border-color:#cdd6de !important}
     body.print-light .lc-no{background:#111 !important;color:#fff !important}
-    body.print-light .lc-size,body.print-light .job-cust,body.print-light .job-meta b,
+    body.print-light .lc-size,body.print-light .job-cust,body.print-light .fact .fval,
       body.print-light .op .who .n1,body.print-light .rail li{color:#111 !important}
     body.print-light .rail h3{color:#111 !important}
     body.print-light .rail .panel.pab h3{color:#b91c1c !important}
     body.print-light .rail .panel.pvac h3{color:#1d4ed8 !important}
     body.print-light .rail .panel.ppress h3{color:#0a7f3f !important}
-    body.print-light .lc-desc,body.print-light .job-meta,body.print-light .op .role,
-      body.print-light .press-no,body.print-light .setup-lbl,body.print-light .rail .none{color:#555 !important}
+    body.print-light .lc-desc,body.print-light .op .role,body.print-light .fact .flbl,
+      body.print-light .fact .fsub,body.print-light .press-no,body.print-light .setup-lbl,
+      body.print-light .rail .none{color:#555 !important}
+    body.print-light .op .who.empty{color:#999 !important}
     body.print-light .lc-po{color:#111 !important;background:#f2f2f2 !important;border-color:#bbb !important}
-    body.print-light .job-code{color:#8a5a00 !important;background:#fff7e6 !important;border-color:#e0b050 !important}
-    body.print-light .pal{color:#0b5fa5 !important;background:#eaf4ff !important;border-color:#9cc6ef !important}
-    body.print-light .op{border-bottom-color:#ddd !important}
+    body.print-light .fact .fval.code{color:#8a5a00 !important}
+    body.print-light .pal{color:#046a5d !important;background:#e6faf6 !important;border-color:#8fddd0 !important}
+    body.print-light .stripe-tag{color:#5b3ea6 !important;background:#f0eaff !important;border-color:#b9a3f0 !important}
     body.print-light .job + .job{border-top-color:#ccc !important}
     body.print-light .legend .li{color:#111 !important}
   }
@@ -434,7 +420,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v70';
+var APP_VERSION = 'v71';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
