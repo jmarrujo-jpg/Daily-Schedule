@@ -59,7 +59,7 @@
   main{flex:1;padding:16px 18px 8px}
   /* Board tiles flow into a grid whose column count adapts to how many are shown
      (set inline per render), ordered by status. Tiles stretch to fill their cell. */
-  .board-grid{display:grid;gap:14px;align-content:start}
+  .board-grid{display:grid;gap:14px;align-content:start;grid-auto-rows:1fr}
   .board-grid .line-card{min-width:0}
   .board-empty{color:var(--dim);font-family:var(--disp);font-weight:600;font-size:18px;
     letter-spacing:.04em;padding:40px;text-align:center}
@@ -116,7 +116,7 @@
   .op .who{display:flex;flex-direction:column;align-items:flex-end;gap:0;font-family:var(--disp);text-align:right}
   .op .who .n1{font-weight:600;font-size:20px;letter-spacing:.01em}
   .op .who .nx{font-weight:600;font-size:13.5px;color:var(--amber);letter-spacing:.02em}
-  .op .who.empty{font-weight:500;font-size:16px;color:var(--dim)}
+  .op .who.empty{font-weight:600;font-size:20px;color:var(--dim)}
 
   /* side rail */
   .rail{display:flex;flex-direction:column;gap:12px}
@@ -430,7 +430,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v66';
+var APP_VERSION = 'v67';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
