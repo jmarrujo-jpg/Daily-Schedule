@@ -424,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v63';
+var APP_VERSION = 'v64';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1104,11 +1104,22 @@ function solveLine(l, open){
   const used=new Set(), chosen={};
   let best=null;
   const scoreOf=()=>{
-    let crit=0,total=0,tier=0;
-    order.forEach(k=>{ const nm=chosen[k]; if(nm){ total++; tier+=posTier(rosterEntry(nm),k); if(isCritical(k,lineNo)) crit++; } });
-    return {crit,total,tier};
+    let crit=0,total=0,n1=0,n2=0,n3=0;
+    order.forEach(k=>{ const nm=chosen[k]; if(nm){ total++; const t=posTier(rosterEntry(nm),k);
+      if(t===1)n1++; else if(t===2)n2++; else n3++; if(isCritical(k,lineNo)) crit++; } });
+    return {crit,total,n1,n2,n3};
   };
-  const better=(a,b)=>{ if(!b) return true; if(a.crit!==b.crit) return a.crit>b.crit; if(a.total!==b.total) return a.total>b.total; return a.tier<b.tier; };
+  // Pick the crew that: covers the most CRITICAL spots, then fills the most spots,
+  // then puts the most people in their PRIMARY role, then the most in their
+  // secondary, and leaves the fewest stuck in a tertiary role.
+  const better=(a,b)=>{
+    if(!b) return true;
+    if(a.crit!==b.crit) return a.crit>b.crit;
+    if(a.total!==b.total) return a.total>b.total;
+    if(a.n1!==b.n1) return a.n1>b.n1;
+    if(a.n2!==b.n2) return a.n2>b.n2;
+    return a.n3<b.n3;
+  };
   const dfs=(i)=>{
     if(i>=order.length){ const s=scoreOf(); if(better(s,best&&best.s)) best={s,map:Object.assign({},chosen)}; return; }
     const posKey=order[i];
@@ -1129,23 +1140,6 @@ function autofillLine(l){
   OP_ROLES.forEach(([k])=>{ if(!autofillsHere(k,lineNo)) return; l.ops[k][0]=""; open.push(k); });
   solveLine(l, open);
 }
-/* After someone leaves a running line (absent / vacation / press), make sure every
-   CRITICAL spot is covered if the available crew can cover it. If all criticals are
-   already filled, nothing is touched. If one is empty, first try to fill the empty
-   spots without moving anyone; if a critical is STILL empty, re-solve the whole line
-   from scratch so a scarce spot can pull its person back from one others can cover
-   (this is why marking people absent one-at-a-time now matches idle→Run 1st). */
-function refillCriticals(l){
-  prepOps(l);
-  const lineNo=String(l.lineNo||'').trim();
-  const off=unavailableForLines();
-  OP_ROLES.forEach(([k])=>{ if(off.has(firstName(l,k).toLowerCase())) l.ops[k][0]=""; });
-  const crit=OP_ROLES.filter(([k])=>autofillsHere(k,lineNo)).map(([k])=>k).filter(k=> isCritical(k,lineNo));
-  if(!crit.some(k=> !firstName(l,k))) return;              // every critical covered → leave the line as-is
-  const emptyNow=OP_ROLES.filter(([k])=>autofillsHere(k,lineNo)).map(([k])=>k).filter(k=> !firstName(l,k));
-  solveLine(l, emptyNow);                                  // 1) fill blanks without disturbing anyone
-  if(crit.some(k=> !firstName(l,k))) autofillLine(l);      // 2) still a gap → full re-solve to reshuffle coverage
-}
 /* Remove anyone now unavailable (absent / on vacation / on a press) from every
    line's crew, leaving their spot blank. No backfill, no reshuffle — the rest of
    the board is left exactly as it is. */
@@ -1159,40 +1153,21 @@ function stripUnavailable(){
     });
   });
 }
-/* Refill any empty critical spot on every Run 1st line from the free pool. */
-function coverCriticals(){
-  board.lines.forEach(l=>{ if(!l.hidden && statusOf(l)==='run1') refillCriticals(l); });
-}
-/* When a person is available and NOT currently on a line, but their Primary role's
-   position on a Run 1st line is held by a stand-in (a Secondary/Tertiary) or is
-   empty, swap the primary in and free the stand-in. This is what runs their spot
-   back to them when they return from absence/vacation. The freed stand-in goes
-   back to the pool (coverCriticals may reuse them). Runs until nothing changes so
-   a chain of returns each reclaim their own spot. */
-function reclaimPrimaries(){
-  let changed=true, guard=0;
-  while(changed && guard++<20){
-    changed=false;
-    const off=unavailableForLines();
-    const onLine=new Set();
-    board.lines.forEach(l=>{ if(!l.hidden && carriesCrew(l)) OP_ROLES.forEach(([k])=>{ const nm=firstName(l,k).toLowerCase(); if(nm) onLine.add(nm); }); });
-    for(const p of roster){
-      const key=p.name.trim().toLowerCase();
-      if(off.has(key) || onLine.has(key)) continue;       // unavailable, or already placed
-      const pos=rolePos(p.primary); if(!pos) continue;    // primary isn't a line position
-      // best Run 1st line where this primary can displace a stand-in / fill a blank
-      let target=null;
-      board.lines.forEach(l=>{
-        if(l.hidden || statusOf(l)!=='run1') return;
-        const lineNo=String(l.lineNo||'').trim();
-        if(!autofillsHere(pos,lineNo) || excBlocks(p,lineNo,pos)) return;
-        const cur=firstName(l,pos);
-        const curTier=cur ? posTier(rosterEntry(cur),pos) : 99;   // empty spot = worst
-        if(curTier>1 && (!target || curTier>target.curTier)) target={l,pos,curTier};
-      });
-      if(target){ target.l.ops[pos][0]=p.name; onLine.add(key); changed=true; }
-    }
-  }
+/* Re-solve every Run 1st line so the crew is always the best available mix — all
+   criticals covered, and as many people as possible in their primary role. Runs
+   whenever the available crew changes (someone marked absent/vacation/press, or
+   returns). All Run 1st lines are blanked first, then solved in board order (Line 6
+   first), so nobody is double-booked and returning primaries land back in their own
+   spot. Non-Run-1st lines are left to whatever was entered by hand. */
+function restaffRun1(){
+  const run1=board.lines.filter(l=> !l.hidden && statusOf(l)==='run1');
+  run1.forEach(l=>{ prepOps(l); const lineNo=String(l.lineNo||'').trim();
+    OP_ROLES.forEach(([k])=>{ if(autofillsHere(k,lineNo)) l.ops[k][0]=""; }); });
+  run1.forEach(l=>{
+    const lineNo=String(l.lineNo||'').trim();
+    const open=OP_ROLES.filter(([k])=>autofillsHere(k,lineNo)).map(([k])=>k);
+    solveLine(l, open);
+  });
 }
 /* Idle and Change-Over lines carry no crew — wipe every position clean. */
 function clearLineCrew(l){
@@ -1656,12 +1631,11 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.value==='__add__'){
       const name=(prompt('Add a new name to the roster:')||'').trim();
       if(name){ rosterAdd(name); board.staff[key][i]=name; }
-      stripUnavailable(); reclaimPrimaries(); coverCriticals(); scheduleSave(); render(); return;
+      stripUnavailable(); restaffRun1(); scheduleSave(); render(); return;
     }
     board.staff[key][i]=t.value;
-    stripUnavailable();                         // remove the newly-absent person
-    reclaimPrimaries();                         // a returning primary reclaims their own spot
-    coverCriticals();                           // and never leave a critical spot empty if it can be filled
+    stripUnavailable();                         // remove the newly-absent person from every line
+    restaffRun1();                              // re-solve Run 1st crews: criticals covered, primaries preferred
     scheduleSave(); render(); return;
   }
   if(t.dataset.pressunit!==undefined){                          // which press this row is
@@ -1681,12 +1655,11 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.value==='__add__'){
       const name=(prompt('Add a new name to the roster:')||'').trim();
       if(name){ rosterAdd(name); row.ops[i]=name; }
-      stripUnavailable(); reclaimPrimaries(); coverCriticals(); scheduleSave(); render(); return;
+      stripUnavailable(); restaffRun1(); scheduleSave(); render(); return;
     }
     row.ops[i]=t.value;
     stripUnavailable();                         // a press operator is no longer free for a line
-    reclaimPrimaries();                         // a freed-up primary reclaims their own spot
-    coverCriticals();
+    restaffRun1();                              // re-solve Run 1st crews around the change
     scheduleSave(); render(); return;
   }
   if(t.dataset.announce!==undefined){
