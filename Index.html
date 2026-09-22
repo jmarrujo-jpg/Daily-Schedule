@@ -424,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v60';
+var APP_VERSION = 'v61';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1058,36 +1058,88 @@ function busyNames(exceptLine){
   });
   return s;
 }
-/* Auto-staff ONE line — fires only when a line is set to Run 1st. Fills the empty
-   position spots (never overwriting a name already there), Primary roles first,
-   then Secondary, then Tertiary, and never reuses anyone who is absent / on
-   vacation / on a press or already placed on another line. Frame & Straps only
-   fills on Line 6. A spot with no one available stays blank. */
-function autofillLine(l){
+/* Critical positions must never be left empty when someone can fill them:
+   Bodymaker, Double Seamer and Palletizer on every line, plus Frame & Straps on
+   Line 6. Forklift is not critical. */
+function isCritical(posKey, lineNo){
+  if(posKey==='frameStraps') return String(lineNo||'').trim()==='6';
+  return posKey==='bodymaker' || posKey==='doubleSeamer' || posKey==='palletizer';
+}
+function prepOps(l){
   if(!l.ops) l.ops={};
   OP_ROLES.forEach(([k])=>{ if(!Array.isArray(l.ops[k])) l.ops[k]=(l.ops[k]==null||l.ops[k]==='')?[""]:[String(l.ops[k])]; });
+}
+function firstName(l,k){ return String((l.ops[k]||[])[0]||'').trim(); }
+
+/* Fill the given open positions on line l with the best mix of available people.
+   This is a real assignment, not a greedy pass, so it will move people between
+   roles to avoid stranding a critical spot (e.g. use a tertiary Double Seamer for
+   Double Seamer instead of spending him on Bodymaker where others can cover). It
+   chooses the assignment that (1) fills the most CRITICAL spots, then (2) the most
+   spots overall, then (3) uses the best-ranked people (Primary before Secondary
+   before Tertiary). People already on other lines / absent / on vacation / on a
+   press, and anyone kept in a locked (not-open) spot on this line, are off-limits.
+   Frame & Straps only fills on Line 6. */
+function solveLine(l, open){
+  if(!open.length) return;
   const lineNo=String(l.lineNo||'').trim();
   const off=unavailableForLines();
   const taken=busyNames(l);
-  // drop anyone unavailable from this line, and treat everyone still on it as taken
+  // lock in valid occupants of positions we're NOT refilling
   OP_ROLES.forEach(([k])=>{
-    l.ops[k]=l.ops[k].map(n=> off.has(String(n||'').trim().toLowerCase()) ? "" : n);
-    l.ops[k].forEach(n=>{ const kk=String(n||'').trim().toLowerCase(); if(kk) taken.add(kk); });
+    if(!autofillsHere(k,lineNo) || open.includes(k)) return;
+    const nm=firstName(l,k);
+    if(nm && !off.has(nm.toLowerCase())) taken.add(nm.toLowerCase());
   });
-  for(let tier=1;tier<=3;tier++){
-    OP_ROLES.forEach(([posKey])=>{
-      if(!autofillsHere(posKey,lineNo)) return;   // Frame & Straps only on Line 6
-      const arr=l.ops[posKey];
-      if(arr[0] && arr[0].trim()) return;         // don't overwrite an existing name
-      const pick=roster.find(p=>{
-        const key=p.name.trim().toLowerCase();
-        if(taken.has(key)) return false;
-        if(excBlocks(p,lineNo,posKey)) return false;
-        return posTier(p,posKey)===tier;
-      });
-      if(pick){ arr[0]=pick.name; taken.add(pick.name.trim().toLowerCase()); }
+  const cand={};
+  open.forEach(posKey=>{
+    cand[posKey]=roster.filter(p=>{
+      const key=p.name.trim().toLowerCase();
+      if(taken.has(key)) return false;
+      if(excBlocks(p,lineNo,posKey)) return false;
+      return posTier(p,posKey)>0;
     });
-  }
+  });
+  const order=open.slice().sort((a,b)=> cand[a].length-cand[b].length);  // scarcest first
+  const used=new Set(), chosen={};
+  let best=null;
+  const scoreOf=()=>{
+    let crit=0,total=0,tier=0;
+    order.forEach(k=>{ const nm=chosen[k]; if(nm){ total++; tier+=posTier(rosterEntry(nm),k); if(isCritical(k,lineNo)) crit++; } });
+    return {crit,total,tier};
+  };
+  const better=(a,b)=>{ if(!b) return true; if(a.crit!==b.crit) return a.crit>b.crit; if(a.total!==b.total) return a.total>b.total; return a.tier<b.tier; };
+  const dfs=(i)=>{
+    if(i>=order.length){ const s=scoreOf(); if(better(s,best&&best.s)) best={s,map:Object.assign({},chosen)}; return; }
+    const posKey=order[i];
+    for(const p of cand[posKey]){
+      const key=p.name.trim().toLowerCase(); if(used.has(key)) continue;
+      used.add(key); chosen[posKey]=p.name; dfs(i+1); used.delete(key); delete chosen[posKey];
+    }
+    chosen[posKey]=""; dfs(i+1); delete chosen[posKey];   // leaving it empty is always an option
+  };
+  dfs(0);
+  if(best) open.forEach(posKey=>{ l.ops[posKey][0]=best.map[posKey]||""; });
+}
+/* Run 1st — staff the whole line from scratch, best assignment (criticals first). */
+function autofillLine(l){
+  prepOps(l);
+  const lineNo=String(l.lineNo||'').trim();
+  const open=[];
+  OP_ROLES.forEach(([k])=>{ if(!autofillsHere(k,lineNo)) return; l.ops[k][0]=""; open.push(k); });
+  solveLine(l, open);
+}
+/* After someone leaves a running line (absent / vacation / press), refill any now
+   empty CRITICAL spot from the free pool — so a critical position is never left
+   blank when it can be covered. Non-critical spots (forklift) stay as they are. */
+function refillCriticals(l){
+  prepOps(l);
+  const lineNo=String(l.lineNo||'').trim();
+  const off=unavailableForLines();
+  OP_ROLES.forEach(([k])=>{ if(off.has(firstName(l,k).toLowerCase())) l.ops[k][0]=""; });
+  const open=OP_ROLES.filter(([k])=>autofillsHere(k,lineNo)).map(([k])=>k)
+    .filter(k=> isCritical(k,lineNo) && !firstName(l,k));
+  solveLine(l, open);
 }
 /* Remove anyone now unavailable (absent / on vacation / on a press) from every
    line's crew, leaving their spot blank. No backfill, no reshuffle — the rest of
@@ -1101,6 +1153,10 @@ function stripUnavailable(){
       l.ops[k]=l.ops[k].map(n=> off.has(String(n||'').trim().toLowerCase()) ? "" : n);
     });
   });
+}
+/* Refill any empty critical spot on every Run 1st line from the free pool. */
+function coverCriticals(){
+  board.lines.forEach(l=>{ if(!l.hidden && statusOf(l)==='run1') refillCriticals(l); });
 }
 /* Idle and Change-Over lines carry no crew — wipe every position clean. */
 function clearLineCrew(l){
@@ -1564,10 +1620,11 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.value==='__add__'){
       const name=(prompt('Add a new name to the roster:')||'').trim();
       if(name){ rosterAdd(name); board.staff[key][i]=name; }
-      stripUnavailable(); scheduleSave(); render(); return;
+      stripUnavailable(); coverCriticals(); scheduleSave(); render(); return;
     }
     board.staff[key][i]=t.value;
-    stripUnavailable();                         // remove the newly-absent person; leave their spot blank
+    stripUnavailable();                         // remove the newly-absent person
+    coverCriticals();                           // but never leave a critical spot empty if it can be filled
     scheduleSave(); render(); return;
   }
   if(t.dataset.pressunit!==undefined){                          // which press this row is
@@ -1587,10 +1644,11 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.value==='__add__'){
       const name=(prompt('Add a new name to the roster:')||'').trim();
       if(name){ rosterAdd(name); row.ops[i]=name; }
-      stripUnavailable(); scheduleSave(); render(); return;
+      stripUnavailable(); coverCriticals(); scheduleSave(); render(); return;
     }
     row.ops[i]=t.value;
     stripUnavailable();                         // a press operator is no longer free for a line
+    coverCriticals();
     scheduleSave(); render(); return;
   }
   if(t.dataset.announce!==undefined){
