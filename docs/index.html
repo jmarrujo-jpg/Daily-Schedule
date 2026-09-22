@@ -424,7 +424,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v57';
+var APP_VERSION = 'v58';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1087,6 +1087,52 @@ function clearLineCrew(l){
   if(!l.ops) l.ops={};
   OP_ROLES.forEach(([k])=>{ l.ops[k]=[""]; });
 }
+/* Best single available person for one position on one line, excluding anyone
+   off (absent / vacation / on a press), already placed on this line, or excepted
+   here. Returns their name only if exactly one person holds the best tier; a tie
+   or no candidate returns "" (leave the spot for a human). */
+function bestAvailableFor(lineNo, posKey, taken){
+  const off=unavailableForLines();
+  let bt=99, names=[];
+  roster.forEach(p=>{
+    const key=p.name.trim().toLowerCase();
+    if(off.has(key) || taken.has(key)) return;
+    if(excBlocks(p, lineNo, posKey)) return;
+    const tier=posTier(p, posKey);
+    if(tier<=0) return;
+    if(tier<bt){ bt=tier; names=[p.name]; }
+    else if(tier===bt){ names.push(p.name); }
+  });
+  return names.length===1 ? names[0] : "";
+}
+/* When someone is marked absent / on vacation (or put on a press), pull them out
+   of any running line's crew and try to backfill their spot with the next best
+   available person — but only for positions that auto-fill on that line, so Frame
+   & Straps off Line 6 is just cleared, never auto-picked. No clear pick, or a
+   non-auto-filling position, leaves the spot blank. */
+function reconcileUnavailable(){
+  const off=unavailableForLines();
+  board.lines.forEach(l=>{
+    if(statusOf(l)==='') return;                 // idle lines carry no crew
+    if(!l.ops) return;
+    const lineNo=String(l.lineNo||'').trim();
+    // normalize every position to an array so we can edit slots in place
+    OP_ROLES.forEach(([k])=>{ if(!Array.isArray(l.ops[k])) l.ops[k]=(l.ops[k]==null||l.ops[k]==='')?[""]:[String(l.ops[k])]; });
+    // names still validly on this line, so a backfill never double-books
+    const onLine=new Set();
+    OP_ROLES.forEach(([k])=> l.ops[k].forEach(n=>{ const kk=String(n||'').trim().toLowerCase(); if(kk && !off.has(kk)) onLine.add(kk); }));
+    OP_ROLES.forEach(([posKey])=>{
+      const arr=l.ops[posKey];
+      for(let i=0;i<arr.length;i++){
+        const key=String(arr[i]||'').trim().toLowerCase();
+        if(!key || !off.has(key)) continue;      // only replace people who are now unavailable
+        const repl=autofillsHere(posKey, lineNo) ? bestAvailableFor(lineNo, posKey, onLine) : "";
+        arr[i]=repl;
+        if(repl) onLine.add(repl.trim().toLowerCase());
+      }
+    });
+  });
+}
 function updateCoChip(){
   const n = changeoverCount(), el=document.getElementById('coChip');
   if(n>0){ el.className='cochip has'; el.textContent='⟳ '+n+' CHANGE-OVER'+(n>1?'S':'')+' TODAY'; }
@@ -1300,7 +1346,9 @@ function renderEdit(){
       }).join('');
       return `
       <div class="jobedit">
-        <div class="jobedit-h"><span>Product ${ji+1}</span><div class="spacer" style="flex:1"></div>${ji>0?`<button data-swapjob="${idx}" data-ji="${ji}">⇅ swap with Product ${ji}</button>`:''}${l.jobs.length>1?`<button data-rmjob="${idx}" data-ji="${ji}">remove</button>`:''}</div>
+        <div class="jobedit-h">${l.jobs.length>1
+          ? `<select class="jobslot" data-line="${idx}" data-jobslot="${ji}" title="Change this product's order">${l.jobs.map((_,k)=>`<option value="${k}"${k===ji?' selected':''}>Product ${k+1}</option>`).join('')}</select>`
+          : `<span>Product ${ji+1}</span>`}<div class="spacer" style="flex:1"></div>${l.jobs.length>1?`<button data-rmjob="${idx}" data-ji="${ji}">remove</button>`:''}</div>
         <div class="row2">
           <div class="fld"><label>Product code</label>
             <input value="${esc(j.code)}" data-line="${idx}" data-job="${ji}" data-jf="code" placeholder="e.g. 10432"></div>
@@ -1482,6 +1530,11 @@ document.getElementById('view').addEventListener('input', e=>{
   const li = t.getAttribute('data-line');
   if(li!==null){
     const idx=+li, l=board.lines[idx];
+    if(t.dataset.jobslot!==undefined){                         // reorder: move this product into the chosen slot
+      const from=+t.dataset.jobslot, to=+t.value, J=l.jobs;    // (swaps with whatever product is already there)
+      if(from!==to && J[from] && J[to]){ const tmp=J[from]; J[from]=J[to]; J[to]=tmp; scheduleSave(); render(); }
+      return;
+    }
     if(t.dataset.op!==undefined && t.dataset.i!==undefined){   // a position dropdown
       const k=t.dataset.op, i=+t.dataset.i;
       if(!Array.isArray(l.ops[k])) l.ops[k]=[];
@@ -1537,9 +1590,11 @@ document.getElementById('view').addEventListener('input', e=>{
     if(t.value==='__add__'){
       const name=(prompt('Add a new name to the roster:')||'').trim();
       if(name){ rosterAdd(name); board.staff[key][i]=name; }
-      scheduleSave(); render(); return;
+      reconcileUnavailable(); scheduleSave(); render(); return;
     }
-    board.staff[key][i]=t.value; scheduleSave(); return;
+    board.staff[key][i]=t.value;
+    reconcileUnavailable();                     // pull the newly-absent person off any line + backfill
+    scheduleSave(); render(); return;
   }
   if(t.dataset.pressunit!==undefined){                          // which press this row is
     const row=board.staff.presses[+t.dataset.pressunit];
@@ -1641,10 +1696,6 @@ document.getElementById('view').addEventListener('click', async e=>{
   else if(t.dataset.addjob!==undefined){                         // add a product/job to a line
     const i=+t.dataset.addjob, L=board.lines[i];
     if(L.jobs.length<MAX_JOBS){ L.jobs.push(blankJob()); scheduleSave(); render(); }
-  }
-  else if(t.dataset.swapjob!==undefined){                        // swap a product with the one above it
-    const i=+t.dataset.swapjob, ji=+t.dataset.ji, J=board.lines[i].jobs;
-    if(ji>0 && J[ji] && J[ji-1]){ const tmp=J[ji-1]; J[ji-1]=J[ji]; J[ji]=tmp; scheduleSave(); render(); }
   }
   else if(t.dataset.rmjob!==undefined){                          // remove a product/job
     const i=+t.dataset.rmjob, ji=+t.dataset.ji;
