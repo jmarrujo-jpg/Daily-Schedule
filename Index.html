@@ -168,6 +168,11 @@
   .addname{align-self:flex-start;background:transparent;border:1px dashed var(--edge2);color:var(--muted);
     border-radius:5px;padding:5px 10px;font-size:12px;font-weight:600;letter-spacing:.02em}
   .addname:hover{color:var(--amber);border-color:var(--amber-d)}
+  .nsel{display:flex;align-items:center;gap:6px}
+  .nsel select{flex:1;min-width:0}
+  .rmname{flex:0 0 auto;background:transparent;border:1px solid var(--edge2);color:var(--muted);
+    border-radius:5px;width:30px;height:30px;font-size:13px;line-height:1;cursor:pointer;padding:0}
+  .rmname:hover{color:#fff;background:var(--red);border-color:var(--red)}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end}
   .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end}
   .row2 .fld,.row3 .fld{margin-bottom:0}
@@ -424,7 +429,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v64';
+var APP_VERSION = 'v65';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1334,14 +1339,14 @@ function nameOptions(cur){
 function posInputs(l, idx, k){
   const arr = opArr(l,k); const shown = arr.length?arr:[""];
   const selects = shown.map((n,i)=>
-    `<select class="${i>0?'trainee':''}${conflictClass(n)}" data-line="${idx}" data-op="${k}" data-i="${i}">${nameOptions(n)}</select>`).join('');
+    `<span class="nsel"><select class="${i>0?'trainee':''}${conflictClass(n)}" data-line="${idx}" data-op="${k}" data-i="${i}">${nameOptions(n)}</select><button class="rmname" data-line="${idx}" data-rmop="${k}" data-i="${i}" title="Remove">✕</button></span>`).join('');
   const add = shown.length<MAX_PER_POS ? `<button class="addname" data-line="${idx}" data-addop="${k}">＋ add person</button>` : '';
   return `<div class="names">${selects}${add}</div>`;
 }
 function staffPeopleInputs(key){
   const arr=(Array.isArray(board.staff[key])?board.staff[key]:[]).map(s=>String(s||''));
   const shown = arr.length?arr:[""];
-  const sels = shown.map((n,i)=>`<select class="${conflictClass(n).trim()}" data-staffp="${key}" data-i="${i}">${nameOptions(n)}</select>`).join('');
+  const sels = shown.map((n,i)=>`<span class="nsel"><select class="${conflictClass(n).trim()}" data-staffp="${key}" data-i="${i}">${nameOptions(n)}</select><button class="rmname" data-rmstaff="${key}" data-i="${i}" title="Remove">✕</button></span>`).join('');
   const add = `<button class="addname" data-addstaff="${key}">＋ add person</button>`;
   return `<div class="names">${sels}${add}</div>`;
 }
@@ -1359,7 +1364,7 @@ function pressEditRows(){
   return board.staff.presses.map((row,ri)=>{
     const ops=(row.ops&&row.ops.length)?row.ops:[""];
     const nameSels=ops.map((n,i)=>
-      `<select class="${i>0?'trainee':''}${conflictClass(n)}" data-pressrow="${ri}" data-i="${i}">${nameOptions(n)}</select>`).join('');
+      `<span class="nsel"><select class="${i>0?'trainee':''}${conflictClass(n)}" data-pressrow="${ri}" data-i="${i}">${nameOptions(n)}</select><button class="rmname" data-rmpressperson="${ri}" data-i="${i}" title="Remove">✕</button></span>`).join('');
     const addPerson = ops.length<MAX_PER_POS ? `<button class="addname" data-addpressperson="${ri}">＋ person</button>`:'';
     const modeOpts = PRESS_MODES.map(m=>`<option value="${m}" ${m===(row.mode||'')?'selected':''}>${m||'— open/shipping —'}</option>`).join('');
     return `<div class="pressrow">
@@ -1702,15 +1707,32 @@ document.getElementById('view').addEventListener('click', async e=>{
     const idx=+t.dataset.line, k=t.dataset.addop, arr=board.lines[idx].ops[k];
     if(Array.isArray(arr) && arr.length<MAX_PER_POS){ arr.push(""); scheduleSave(); render(); }
   }
+  else if(t.dataset.rmop!==undefined){                           // remove one person dropdown from a position
+    const idx=+t.dataset.line, k=t.dataset.rmop, i=+t.dataset.i, l=board.lines[idx];
+    if(Array.isArray(l.ops[k])){ l.ops[k].splice(i,1); if(!l.ops[k].length) l.ops[k]=[""]; }
+    scheduleSave(); render();
+  }
   else if(t.dataset.addstaff!==undefined){                       // add a person to absent/vacation
     const key=t.dataset.addstaff;
     if(!Array.isArray(board.staff[key])) board.staff[key]=[];
     board.staff[key].push(""); scheduleSave(); render();
   }
+  else if(t.dataset.rmstaff!==undefined){                        // remove one absent/vacation/custodian dropdown
+    const key=t.dataset.rmstaff, i=+t.dataset.i;
+    if(Array.isArray(board.staff[key])) board.staff[key].splice(i,1);
+    stripUnavailable(); restaffRun1();                           // that person may be available again → re-solve
+    scheduleSave(); render();
+  }
   else if(t.dataset.addpressperson!==undefined){                 // add a trainee to a press row
     const row=board.staff.presses[+t.dataset.addpressperson];
     if(row){ if(!Array.isArray(row.ops)) row.ops=[""];
       if(row.ops.length<MAX_PER_POS){ row.ops.push(""); scheduleSave(); render(); } }
+  }
+  else if(t.dataset.rmpressperson!==undefined){                  // remove one operator dropdown from a press row
+    const row=board.staff.presses[+t.dataset.rmpressperson], i=+t.dataset.i;
+    if(row && Array.isArray(row.ops)){ row.ops.splice(i,1); if(!row.ops.length) row.ops=[""]; }
+    stripUnavailable(); restaffRun1();                           // that operator may be free for a line now → re-solve
+    scheduleSave(); render();
   }
   else if(t.dataset.rmpressrow!==undefined){                     // remove a press row
     board.staff.presses.splice(+t.dataset.rmpressrow,1);
