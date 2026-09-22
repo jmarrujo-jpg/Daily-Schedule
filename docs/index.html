@@ -70,8 +70,8 @@
   .line-card.idle{opacity:.66}
 
   .lc-head{display:flex;align-items:flex-start;gap:12px}
-  .lc-no{font-family:var(--disp);font-weight:700;font-size:15px;letter-spacing:.08em;color:#0d1117;
-    background:var(--text);border-radius:5px;padding:4px 11px;text-transform:uppercase;flex:none}
+  .lc-no{font-family:var(--disp);font-weight:700;font-size:20px;line-height:1;letter-spacing:.06em;color:#0d1117;
+    background:var(--text);border-radius:6px;padding:7px 12px;text-transform:uppercase;flex:none}
   .lc-headtxt{flex:1;min-width:0}
   .lc-po{flex:none;align-self:flex-start;font-family:var(--mono);font-weight:700;font-size:15px;color:var(--text);
     background:var(--edge-soft,rgba(255,255,255,.05));border:1px solid var(--edge);border-radius:6px;padding:4px 10px;white-space:nowrap}
@@ -81,12 +81,12 @@
   .setup-lbl{font-family:var(--disp);font-weight:700;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-right:2px}
   .pal{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.03em;color:#04211d;
     background:var(--teal);border:1px solid var(--teal-d);border-radius:5px;padding:3px 10px}
-  .lc-row1{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-  .status-pill{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:.06em;text-transform:uppercase;
-    border-radius:7px;padding:6px 15px;line-height:1;white-space:nowrap;flex:none}
+  .lc-row1{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .status-pill{font-family:var(--disp);font-weight:700;font-size:20px;letter-spacing:.06em;text-transform:uppercase;
+    border-radius:6px;padding:7px 14px;line-height:1;white-space:nowrap;flex:none}
   .status-pill.co{box-shadow:0 0 0 0 rgba(239,68,68,.6);animation:copulse 1.6s infinite}
   @keyframes copulse{0%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}70%{box-shadow:0 0 0 13px rgba(239,68,68,0)}100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}}
-  .lc-size{font-family:var(--disp);font-weight:700;font-size:46px;line-height:.88;letter-spacing:.01em}
+  .lc-size{font-family:var(--disp);font-weight:700;font-size:42px;line-height:1;letter-spacing:.01em}
   .lc-desc{font-size:13px;color:var(--muted);font-weight:600;margin-top:4px}
 
   /* jobs — one or more products running on the line (same size, different customer) */
@@ -94,13 +94,13 @@
   .job{padding:7px 0}
   .job + .job{border-top:1px dashed var(--edge)}
   .job-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-  .job-cust{font-family:var(--disp);font-weight:700;font-size:23px;text-transform:uppercase;letter-spacing:.02em;color:var(--text)}
-  .job-code{font-family:var(--mono);font-weight:600;font-size:13px;color:var(--amber);
-    background:rgba(255,179,0,.08);border:1px solid var(--amber-d);border-radius:5px;padding:2px 8px}
+  .job-cust{font-family:var(--disp);font-weight:700;font-size:26px;text-transform:uppercase;letter-spacing:.02em;color:var(--text)}
+  .job-code{font-family:var(--mono);font-weight:600;font-size:16px;color:var(--amber);
+    background:rgba(255,179,0,.08);border:1px solid var(--amber-d);border-radius:5px;padding:3px 9px}
   /* stripe badge (I/S / O/S) — its own color so it reads apart from the code */
   .job-stripe{display:inline-flex;gap:4px;align-self:center}
-  .stripe-tag{font-family:var(--disp);font-weight:800;font-size:14px;letter-spacing:.04em;color:var(--purple);
-    background:rgba(161,117,255,.14);border:1px solid var(--purple);border-radius:5px;padding:2px 8px}
+  .stripe-tag{font-family:var(--disp);font-weight:800;font-size:16px;letter-spacing:.04em;color:var(--purple);
+    background:rgba(161,117,255,.14);border:1px solid var(--purple);border-radius:5px;padding:3px 9px}
   .job-meta{display:flex;gap:20px;flex-wrap:wrap;align-items:baseline;margin-top:3px;font-size:14px;color:var(--muted)}
   .job-meta b{color:var(--text);font-family:var(--mono);font-weight:600;font-size:15px}
   .job-meta .lbl{font-family:var(--disp);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
@@ -430,7 +430,7 @@ var API_SECRET = '';    // set only if you set API_TOKEN on the Worker
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v67';
+var APP_VERSION = 'v68';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
