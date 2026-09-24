@@ -446,7 +446,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v76';
+var APP_VERSION = 'v77';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -592,7 +592,7 @@ const DEFAULT_LINE_ORDER = ["6","5","4","2"];
 const STAFF_PEOPLE = [["absent","Absent","pab"], ["vacation","Vacation","pvac"], ["custodian","Custodian","pcust"]];
 const STAFF_TEXT   = [];
 /* Press / Litho units — each gets its own operator dropdown (roster names, up to MAX_PER_POS). */
-const PRESS_UNITS = ["13","15","16","17","18","19","20","3","2-SS","3-SS"];
+const PRESS_UNITS = ["13","15","16","17","18","19","20","2","3","1-SS","2-SS","3-SS"];
 /* Pallet set-up options, in the order they should always display:
    straps → cover caps → frame → pallet type. Wood pallet is the implied
    default (95% of jobs), so only the plastic exception is listed. */
