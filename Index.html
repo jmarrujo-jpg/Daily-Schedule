@@ -316,6 +316,20 @@
   .addline{background:var(--panel2);border:1px dashed var(--edge2);color:var(--muted);border-radius:8px;
     padding:16px;font-family:var(--disp);font-weight:600;letter-spacing:.06em;font-size:15px;text-transform:uppercase}
   .addline:hover{color:var(--amber);border-color:var(--amber-d)}
+  /* "Log new product" panel at the bottom of the editor */
+  .newprod-panel{background:var(--panel);border:1px solid var(--edge2);border-left:4px solid var(--green);
+    border-radius:10px;padding:14px 16px;margin:14px 0 2px}
+  .newprod-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .newprod-title{font-family:var(--disp);font-weight:700;font-size:16px;color:var(--text)}
+  .newprod-hint{font-size:12.5px;color:var(--muted);margin:4px 0 10px}
+  .newprod-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid var(--edge)}
+  .newprod-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .newprod-code{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--amber);letter-spacing:.02em}
+  .newprod-meta{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .newprod-add,.newprod-addall{background:var(--panel2);border:1px solid var(--green);color:var(--green);
+    border-radius:8px;padding:8px 14px;font-weight:700;font-size:13px;white-space:nowrap;cursor:pointer}
+  .newprod-add:hover,.newprod-addall:hover{background:var(--green);color:#05210f}
+  .newprod-addall{margin-left:auto}
   .savechip{font-size:13px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
   .savechip .dot{width:9px;height:9px;border-radius:50%;background:var(--green)}
   .savechip.saving .dot{background:var(--amber)}
@@ -528,7 +542,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v85';
+var APP_VERSION = 'v86';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1013,11 +1027,78 @@ function pickSuggest(i){
   j.code=e.code; j.cust=e.cust; j.ends=e.ends; j.pallet=sortPallet(e.pallet); j.stripe=stripeArr(e.stripe);
   hideSuggest(); scheduleSave(); render();
 }
-/* Fold the current board's products into the catalog — but only when the user has
-   actually committed (window focused; not mid-typing after tabbing away to verify). */
-function maybeAbsorbBoard(){
-  if(!board || !document.hasFocus()) return;
-  if(catalogAbsorbBoard(board)) saveCatalog();
+/* Products are added to the catalog only when the user explicitly asks (the
+   "log as new product" panel at the bottom of the editor), never automatically —
+   so half-typed / tab-away-to-verify codes never create phantom entries. */
+/* Which products on the current board aren't in the catalog yet? Returns the
+   line/job coordinates plus the details, so the panel can list them. */
+function newProductsOnBoard(){
+  const out=[];
+  if(!board || !Array.isArray(board.lines)) return out;
+  (board.lines||[]).forEach((l,li)=>{
+    const size=(l.size||'').trim();
+    (l.jobs||[]).forEach((j,ji)=>{
+      const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
+      if(!code) return;                                   // need at least a product code
+      const key=catKeyOf(code,cust,ends);
+      if(catalog.some(x=>x._key===key)) return;           // already catalogued
+      if(out.some(o=>o.key===key)) return;                // de-dupe repeats on the same board
+      out.push({ li, ji, key, code, cust, ends, size,
+                 pallet:sortPallet(Array.isArray(j.pallet)?j.pallet:[]), stripe:stripeArr(j.stripe) });
+    });
+  });
+  return out;
+}
+/* Log one board product into the catalog. Returns true if it was added. */
+function addProductToCatalog(li,ji){
+  const l=board&&board.lines&&board.lines[li], j=l&&l.jobs&&l.jobs[ji];
+  if(!j) return false;
+  const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
+  if(!code) return false;
+  const key=catKeyOf(code,cust,ends);
+  if(catalog.some(x=>x._key===key)) return false;         // already there
+  catalog.push({ _key:key, code, cust, ends, size:(l.size||'').trim(),
+                 pallet:sortPallet(Array.isArray(j.pallet)?j.pallet:[]), stripe:stripeArr(j.stripe),
+                 lastUsed:(board.date||todayStr()), notes:'' });
+  saveCatalog();
+  return true;
+}
+/* Log every not-yet-catalogued product on the board. Returns how many were added. */
+function addAllNewProducts(){
+  let n=0;
+  newProductsOnBoard().forEach(p=>{ if(addProductToCatalog(p.li,p.ji)) n++; });
+  return n;
+}
+/* The "would you like to log these as new products?" panel for the editor. */
+function newProductsPanelHTML(){
+  const list=newProductsOnBoard();
+  if(!list.length) return '<div id="newProdBox"></div>';
+  const rows=list.map(p=>{
+    const bits=[esc(p.cust||'—'), esc(p.ends||'')].filter(Boolean).join(' · ');
+    const setup=esc(setupString(p.pallet,p.stripe));
+    return `<div class="newprod-row">
+      <div class="newprod-info">
+        <span class="newprod-code">${esc(p.code)}</span>
+        <span class="newprod-meta">${bits}${setup?` · ${setup}`:''}</span>
+      </div>
+      <button class="newprod-add" data-addprod-li="${p.li}" data-addprod-ji="${p.ji}">＋ Log product</button>
+    </div>`;
+  }).join('');
+  const many=list.length>1;
+  return `<div id="newProdBox"><div class="newprod-panel">
+    <div class="newprod-head">
+      <span class="newprod-title">Would you like to log ${many?`these ${list.length} products`:'this product'} to the catalog?</span>
+      ${many?`<button class="newprod-addall" id="addAllProd">＋ Log all ${list.length}</button>`:''}
+    </div>
+    <div class="newprod-hint">New product code${many?'s':''} not in your Product Catalog yet. Nothing is saved until you tap.</div>
+    ${rows}
+  </div></div>`;
+}
+/* Refresh just the new-products panel (used after a field blur, without a full
+   re-render that would steal focus from the next field). */
+function refreshNewProdPanel(){
+  const box=document.getElementById('newProdBox');
+  if(box) box.outerHTML = newProductsPanelHTML();
 }
 /* The catalog as sheet-shaped rows (what gets written to the Sheet / cache). */
 function catalogRows(){
@@ -1946,6 +2027,7 @@ function renderEdit(){
       <div class="edit-lines">${lineCards}
         <button class="addline" id="addLine">+ Add line</button>
       </div>
+      ${newProductsPanelHTML()}
       <div class="roster-cta">
         <button class="btn" id="editRoster">👥 Edit Roster — add / remove people &amp; roles</button>
       </div>
@@ -2171,12 +2253,12 @@ document.getElementById('view').addEventListener('focusin', e=>{
 document.getElementById('view').addEventListener('focusout', e=>{
   if(e.target.dataset && e.target.dataset.jf==='code'){ clearTimeout(_psHideTimer); _psHideTimer=setTimeout(hideSuggest,150); }
 });
-// A product field committed (blur after edit) → record it, unless the user tabbed
-// away to verify (window unfocused) mid-typing.
+// A product field committed (blur after edit) → refresh the "log new product"
+// panel so it reflects what's now on the board. Nothing is saved automatically.
 document.getElementById('view').addEventListener('change', e=>{
   const t=e.target;
   if(mode==='edit' && t.dataset && t.dataset.job!==undefined &&
-     (t.dataset.jf==='code'||t.dataset.jf==='cust'||t.dataset.jf==='ends')) maybeAbsorbBoard();
+     (t.dataset.jf==='code'||t.dataset.jf==='cust'||t.dataset.jf==='ends')) refreshNewProdPanel();
 });
 // Keep the floating dropdown glued to its input while scrolling / resizing
 window.addEventListener('scroll', ()=>{ if(_psInput) positionSuggest(); }, true);
@@ -2199,6 +2281,11 @@ document.getElementById('view').addEventListener('click', async e=>{
     if(st) st.textContent='';
     renderProducts(); return;
   }
+  if(t.dataset.addprodLi!==undefined){                          // log one board product to the catalog
+    if(addProductToCatalog(+t.dataset.addprodLi, +t.dataset.addprodJi)) refreshNewProdPanel();
+    return;
+  }
+  if(t.id==='addAllProd'){ if(addAllNewProducts()) refreshNewProdPanel(); return; }  // log all new products
   if(t.id==='addLine'){ board.lines.push(blankLine("")); scheduleSave(); render(); }
   else if(t.id==='addPressRow'){ board.staff.presses.push(blankPressRow()); scheduleSave(); render(); }
   else if(t.id==='addName'){ const inp=document.getElementById('newName'); if(rosterAdd(inp&&inp.value)) render(); }
@@ -2301,7 +2388,7 @@ document.getElementById('view').addEventListener('click', async e=>{
 });
 
 /* ============================ Nav / mode / fullscreen ============================ */
-async function goDate(date){ if(mode==='edit') maybeAbsorbBoard(); hideSuggest(); curDate=date; await loadBoard(date); render(); }
+async function goDate(date){ hideSuggest(); curDate=date; await loadBoard(date); render(); }
 /* Step one work-day in a direction, skipping Sat/Sun. */
 function shiftWorkday(dateStr, dir){
   const [y,m,d]=dateStr.split('-').map(Number);
@@ -2314,9 +2401,9 @@ document.getElementById('prevDay').onclick=()=>{ goDate(shiftWorkday(curDate,-1)
 document.getElementById('nextDay').onclick=()=>{ goDate(shiftWorkday(curDate,+1)); };
 document.getElementById('todayBtn').onclick=()=>goDate(todayStr());
 document.getElementById('datePick').onchange=e=>goDate(e.target.value);
-document.getElementById('mBoard').onclick=()=>{ if(mode==='edit') maybeAbsorbBoard(); hideSuggest(); mode='board'; render(); };
+document.getElementById('mBoard').onclick=()=>{ hideSuggest(); mode='board'; render(); };
 document.getElementById('mEdit').onclick=()=>{ mode='edit'; render(); };
-document.getElementById('mProducts').onclick=()=>{ if(mode==='edit') maybeAbsorbBoard(); hideSuggest(); mode='products'; render(); };
+document.getElementById('mProducts').onclick=()=>{ hideSuggest(); mode='products'; render(); };
 /* TV / kiosk mode: opening the page with ?tv (e.g. the display PC's kiosk shortcut)
    forces the clean board look — hides the toolbar buttons and the Board/Edit switch —
    even though browser kiosk fullscreen doesn't trigger the Fullscreen API. The plain
