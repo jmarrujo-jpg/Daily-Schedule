@@ -516,7 +516,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v83';
+var APP_VERSION = 'v84';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -945,6 +945,24 @@ function catalogEntry(r){
   if(Array.isArray(r.pallet) || Array.isArray(r.stripe)){ pallet=sortPallet(r.pallet||[]); stripe=stripeArr(r.stripe||[]); }
   else { const s=parseSetup(r.setup); pallet=s.pallet; stripe=s.stripe; }
   return { _key:catKeyOf(code,cust,ends), code, cust, ends, size:String(r.size||'').trim(), pallet, stripe, lastUsed:String(r.lastUsed||'').trim(), notes:String(r.notes||'') };
+}
+/* A single readable suggestion string for a catalog entry, e.g.
+   "41X411  ·  Entrust  ·  401 1 AUTOM  ·  I/S". Used as the <datalist> option
+   value so the code field can offer product suggestions and auto-fill on pick. */
+function productComposite(e){
+  const stripe = stripeArr(e.stripe).join(' ');
+  return [e.code, e.cust, e.ends, stripe].map(s=>String(s||'').trim()).filter(Boolean).join('  ·  ');
+}
+/* Map every suggestion string -> its catalog entry, for reverse lookup on pick. */
+function catalogByComposite(){
+  const m=new Map();
+  catalog.forEach(e=>{ if(e.code||e.cust||e.ends) m.set(productComposite(e), e); });
+  return m;
+}
+/* The <datalist> of product suggestions (sorted smallest→largest by code). */
+function productCodeDatalistHTML(){
+  const rows=catalog.slice().filter(e=>e.code||e.cust||e.ends).sort((a,b)=>natCmp(a.code||'',b.code||''));
+  return `<datalist id="prodCodeList">${rows.map(e=>`<option value="${esc(productComposite(e))}"></option>`).join('')}</datalist>`;
 }
 /* The catalog as sheet-shaped rows (what gets written to the Sheet / cache). */
 function catalogRows(){
@@ -1787,8 +1805,8 @@ function renderEdit(){
           ? `<select class="jobslot" data-line="${idx}" data-jobslot="${ji}" title="Change this product's order">${l.jobs.map((_,k)=>`<option value="${k}"${k===ji?' selected':''}>Product ${k+1}</option>`).join('')}</select>`
           : `<span>Product ${ji+1}</span>`}<div class="spacer" style="flex:1"></div>${l.jobs.length>1?`<button data-rmjob="${idx}" data-ji="${ji}">remove</button>`:''}</div>
         <div class="row2">
-          <div class="fld"><label>Product code</label>
-            <input value="${esc(j.code)}" data-line="${idx}" data-job="${ji}" data-jf="code" placeholder="e.g. 10432"></div>
+          <div class="fld"><label>Product code <span class="hint">(pick a suggestion to auto-fill customer, ends &amp; set-up)</span></label>
+            <input value="${esc(j.code)}" data-line="${idx}" data-job="${ji}" data-jf="code" list="prodCodeList" autocomplete="off" placeholder="e.g. 10432"></div>
           <div class="fld"><label>Customer</label>
             <input value="${esc(j.cust)}" data-line="${idx}" data-job="${ji}" data-jf="cust" placeholder="e.g. Juanitas"></div>
         </div>
@@ -1849,6 +1867,7 @@ function renderEdit(){
   document.getElementById('view').innerHTML = `
     <div class="edit-wrap">
       ${editDayBanner()}
+      ${productCodeDatalistHTML()}
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <div class="savechip" id="saveChip"><span class="dot"></span><span class="txt">Saved</span></div>
         <div class="spacer" style="flex:1"></div>
@@ -1994,8 +2013,17 @@ document.getElementById('view').addEventListener('input', e=>{
       const ji=+t.dataset.job;
       if(!l.jobs[ji]) l.jobs[ji]=blankJob();
       const jf=t.dataset.jf;
-      // order/made are comma-formatted numbers; product code, customer and ends
-      // are upper-cased as you type.
+      if(jf==='code'){
+        const hit=catalogByComposite().get(t.value);           // picked a suggestion → auto-fill the rest
+        if(hit){
+          const j=l.jobs[ji];
+          j.code=hit.code; j.cust=hit.cust; j.ends=hit.ends;
+          j.pallet=sortPallet(hit.pallet); j.stripe=stripeArr(hit.stripe);
+          scheduleSave(); render(); return;
+        }
+        l.jobs[ji].code = upperField(t); scheduleSave(); return; // plain typing
+      }
+      // order/made are comma-formatted numbers; customer and ends are upper-cased as you type.
       l.jobs[ji][jf] = (jf==='order'||jf==='made') ? commaField(t) : upperField(t);
       scheduleSave(); return;
     }
