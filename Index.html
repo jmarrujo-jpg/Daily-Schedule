@@ -217,6 +217,30 @@
   .daywarn.next .dw-main{color:var(--green)}
   .daywarn.future{border-color:var(--blue);background:rgba(58,160,255,.12)}
   .daywarn.future .dw-main{color:var(--blue)}
+  /* Products catalog tab */
+  .prod-wrap{max-width:1400px;margin:0 auto}
+  .prod-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .prod-title{font-family:var(--disp);font-weight:800;font-size:22px;margin:0}
+  .prod-count{color:var(--muted);font-size:13px;font-weight:700}
+  .prod-search{background:var(--panel2);color:var(--text);border:1px solid var(--edge2);border-radius:8px;
+    padding:9px 12px;font-size:15px;min-width:280px}
+  .prod-status{color:var(--amber);font-size:13px;font-weight:700;min-height:18px;margin-bottom:6px}
+  .prod-tablewrap{border:1px solid var(--edge);border-radius:12px;overflow:auto;background:var(--panel)}
+  .prod-table{width:100%;border-collapse:collapse;font-size:15px}
+  .prod-table th{position:sticky;top:0;background:var(--panel2);color:var(--muted);text-align:left;
+    font-family:var(--disp);font-weight:800;font-size:12px;letter-spacing:.06em;text-transform:uppercase;
+    padding:11px 12px;border-bottom:2px solid var(--edge2);white-space:nowrap}
+  .prod-table th.sortable{cursor:pointer;user-select:none}
+  .prod-table th.sortable:hover{color:var(--text)}
+  .prod-table td{padding:10px 12px;border-bottom:1px solid var(--edge)}
+  .prod-table tr:hover td{background:var(--panel2)}
+  .prod-table td.code{font-weight:700;color:var(--amber)}
+  .prod-table td.nowrap{white-space:nowrap}
+  .prod-table .dim{color:var(--edge2)}
+  .prod-table .prod-rm{text-align:center}
+  .prod-table .prod-rm .rm{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:4px 8px;border-radius:6px}
+  .prod-table .prod-rm .rm:hover{background:rgba(239,68,68,.15);color:var(--red)}
+  .prod-empty{text-align:center;color:var(--muted);padding:28px 12px !important}
   /* after-9am lock gate: confirm before editing today's live board */
   .lockgate{max-width:640px;margin:40px auto;text-align:center;background:var(--panel2);
     border:2px solid var(--amber);border-radius:16px;padding:32px 28px;
@@ -456,6 +480,7 @@
     <div class="seg hide-fs">
       <button id="mBoard" class="on">Board</button>
       <button id="mEdit">Edit</button>
+      <button id="mProducts">Products</button>
     </div>
     <button class="btn" id="refreshBtn" title="Refresh the board from the server now">⟳ Refresh</button>
     <button class="btn hide-fs" id="slipBtn" title="Open this day's scanned Production Slips" style="display:none">📄 Production Slip</button>
@@ -485,7 +510,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v80';
+var APP_VERSION = 'v81';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -676,6 +701,9 @@ let mode = "board";
 let curDate = todayStr();
 let board = null;
 let roster = [];   // list of people's names — fills the position / absent / vacation dropdowns
+let catalog = [];  // compiled product reference: each product/customer/end seen, its setup + last-used date
+let prodQuery = '';                       // Products tab search text
+let prodSort = { key:'lastUsed', dir:-1 };// Products tab sort column + direction (default: most recent first)
 let saveTimer = null, saving = false, saveError = null, loadError = null;
 let recoverTimer = null;   // retry handle for auto-recovering from a failed load
 let daySaved = false;      // true when the day being viewed exists as a saved board (for slip lookup)
@@ -694,6 +722,11 @@ function keyFor(date){ return "board:"+date; }
 function fmtDateLong(date){
   const [y,m,d]=date.split('-').map(Number);
   return new Date(y,m-1,d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+}
+function fmtDateShort(date){
+  const [y,m,d]=String(date).split('-').map(Number);
+  if(!y) return String(date||'');
+  return new Date(y,m-1,d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 }
 /* Whole-day difference between a YYYY-MM-DD string and today (0=today, +1=tomorrow, -1=yesterday). */
 function dayDelta(dateStr){
@@ -865,6 +898,66 @@ async function loadRoster(){
   try{ const r = await Store.getRoster(); roster = normalizeRoster(r); }
   catch(e){ roster = []; }
 }
+
+/* ---- Product catalog (a running reference list of every product/customer/end) ----
+   Kept in this browser's localStorage. It fills in automatically as boards are
+   saved, and "Rebuild" scans the saved history from the shared store. Each entry:
+   { code, size, cust, ends, pallet:[], stripe:[], lastUsed:"YYYY-MM-DD" }. */
+const CATALOG_KEY = 'productCatalog';
+function catKeyOf(code,cust,ends){ return ((code||'')+'\u0001'+(cust||'')+'\u0001'+(ends||'')).toUpperCase(); }
+function loadCatalog(){
+  try{ const raw=localStorage.getItem(CATALOG_KEY); catalog = raw?JSON.parse(raw):[]; }catch(e){ catalog=[]; }
+  if(!Array.isArray(catalog)) catalog=[];
+  catalog.forEach(e=>{ if(!e._key) e._key=catKeyOf(e.code,e.cust,e.ends); });
+}
+function saveCatalog(){ try{ localStorage.setItem(CATALOG_KEY, JSON.stringify(catalog)); }catch(e){} }
+function setupString(pallet,stripe){
+  return sortPallet(pallet).concat(stripeArr(stripe)).join(' · ');
+}
+/* Fold every product on a board into the catalog, keeping the most-recent setup
+   and last-used date for each product/customer/end. Returns true if anything changed. */
+function catalogAbsorbBoard(bd){
+  if(!bd || !Array.isArray(bd.lines)) return false;
+  const date = bd.date || '';
+  let changed=false;
+  bd.lines.forEach(l=>{
+    const size=(l.size||'').trim();
+    (l.jobs||[]).forEach(j=>{
+      const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
+      if(!code && !cust && !ends) return;                 // nothing to record
+      const key=catKeyOf(code,cust,ends);
+      const pallet=sortPallet(Array.isArray(j.pallet)?j.pallet:[]);
+      const stripe=stripeArr(j.stripe);
+      let e=catalog.find(x=>x._key===key);
+      if(!e){
+        catalog.push({_key:key, code, cust, ends, size, pallet, stripe, lastUsed:date});
+        changed=true;
+      }else if(!e.lastUsed || (date && date>=e.lastUsed)){  // this board is same-day or newer → refresh setup + date
+        e.code=code; e.cust=cust; e.ends=ends; e.size=size; e.pallet=pallet; e.stripe=stripe;
+        if(date && date!==e.lastUsed){ e.lastUsed=date; changed=true; }
+        else changed=true;
+      }
+    });
+  });
+  return changed;
+}
+/* List every saved board date from the store (works with the Worker or localStorage). */
+async function listBoardDates(){
+  if(API_URL){ try{ return await callApi('listBoards',[]); }catch(e){ return []; } }
+  const out=[];
+  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.indexOf('board:')===0) out.push(k.slice(6)); }
+  return out;
+}
+/* Rebuild the whole catalog by scanning every saved day in the store. */
+async function rebuildCatalog(statusEl){
+  const dates=(await listBoardDates()).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();  // oldest→newest so newest setup wins
+  let done=0;
+  for(const d of dates){
+    if(statusEl) statusEl.textContent = `Scanning ${++done} / ${dates.length}…`;
+    try{ const bd=await Store.get(keyFor(d)); if(bd){ bd.date = bd.date||d; catalogAbsorbBoard(normalizeBoard(bd)); } }catch(e){}
+  }
+  saveCatalog();
+}
 /* Carry a saved day forward as the starting point for the next work-day.
    Status is kept exactly as it was (a CO stays a CO). Each job's remaining
    order = previous remaining − what was made yesterday; that made amount is
@@ -923,7 +1016,8 @@ function scheduleSave(){
   saving=true; saveError=null; updateSaveChip();
   clearTimeout(saveTimer);
   saveTimer=setTimeout(async()=>{
-    try{ await Store.set(keyFor(board.date), board); saveError=null; lastBoardSig=boardSig(board); lastSyncAt=Date.now(); }
+    try{ await Store.set(keyFor(board.date), board); saveError=null; lastBoardSig=boardSig(board); lastSyncAt=Date.now();
+      if(catalogAbsorbBoard(board)) saveCatalog(); }   // keep the product reference list current
     catch(e){ saveError = e && e.message ? e.message : 'Save failed'; }
     saving=false; updateSaveChip();
   }, 500);
@@ -1301,6 +1395,7 @@ function render(){
   if(pt) pt.innerHTML = '<img class="print-logo" src="'+LOGO_SRC+'" alt="CSC"> Daily Line Schedule — '+fmtDateLong(curDate);
   document.getElementById('mBoard').classList.toggle('on',mode==="board");
   document.getElementById('mEdit').classList.toggle('on',mode==="edit");
+  document.getElementById('mProducts').classList.toggle('on',mode==="products");
   updateCoChip();
   updateSlipBtn();
   const fn=document.getElementById('footNote');
@@ -1313,7 +1408,81 @@ function render(){
       ? "Changes save automatically to this day. Same size for two customers? Add another product."
       : "Board view · updates live · press ⛶ TV for fullscreen on a display") + "   ·   " + APP_VERSION;
   }
-  if(mode==="board") renderBoard(); else if(mode==="roster") renderRoster(); else renderEdit();
+  if(mode==="board") renderBoard();
+  else if(mode==="roster") renderRoster();
+  else if(mode==="products") renderProducts();
+  else renderEdit();
+}
+
+/* ============================ Render: PRODUCTS (reference catalog) ============================ */
+function filteredSortedCatalog(){
+  const q=prodQuery.trim().toLowerCase();
+  let rows=catalog.slice();
+  if(q) rows=rows.filter(e=> [e.code,e.cust,e.ends,e.size,setupString(e.pallet,e.stripe)].join(' ').toLowerCase().includes(q));
+  const key=prodSort.key, dir=prodSort.dir;
+  rows.sort((a,b)=>{
+    let av = key==='setup' ? setupString(a.pallet,a.stripe) : (a[key]||'');
+    let bv = key==='setup' ? setupString(b.pallet,b.stripe) : (b[key]||'');
+    av=String(av).toLowerCase(); bv=String(bv).toLowerCase();
+    return av<bv ? -dir : av>bv ? dir : 0;
+  });
+  return rows;
+}
+function prodRowsHTML(){
+  const rows=filteredSortedCatalog();
+  if(!rows.length) return `<tr><td colspan="7" class="prod-empty">${catalog.length
+    ? 'No products match your search.'
+    : 'No products recorded yet. Build a board — or press “↻ Rebuild from saved days” — and they’ll appear here.'}</td></tr>`;
+  const dash='<span class="dim">—</span>';
+  return rows.map(e=>`<tr>
+    <td class="mono code">${esc(e.code)||dash}</td>
+    <td class="mono">${esc(e.size)||dash}</td>
+    <td>${esc(e.cust)||dash}</td>
+    <td class="mono">${esc(e.ends)||dash}</td>
+    <td>${esc(setupString(e.pallet,e.stripe))||dash}</td>
+    <td class="nowrap">${e.lastUsed?esc(fmtDateShort(e.lastUsed)):dash}</td>
+    <td class="prod-rm"><button class="rm" data-rmprod="${esc(e._key)}" title="Remove from list">✕</button></td>
+  </tr>`).join('');
+}
+function paintProductRows(){
+  const tb=document.getElementById('prodRows'); if(tb) tb.innerHTML=prodRowsHTML();
+  const c=document.getElementById('prodCount'); if(c) c.textContent = filteredSortedCatalog().length + ' of ' + catalog.length + ' products';
+}
+function sortArrow(key){ return prodSort.key===key ? (prodSort.dir<0?' ▼':' ▲') : ''; }
+function renderProducts(){
+  const th=(key,label)=>`<th class="sortable" data-sortprod="${key}">${label}${sortArrow(key)}</th>`;
+  document.getElementById('view').innerHTML = `
+  <div class="prod-wrap">
+    <div class="prod-bar">
+      <h2 class="prod-title">📦 Product Catalog</h2>
+      <span class="prod-count" id="prodCount"></span>
+      <div class="spacer" style="flex:1"></div>
+      <input id="prodSearch" class="prod-search" type="search" placeholder="Search product, customer, end, setup…" value="${esc(prodQuery)}">
+      <button class="btn" id="prodExport" title="Download the list as a spreadsheet (CSV)">⭳ Export CSV</button>
+      <button class="btn" id="prodRebuild" title="Scan every saved day and rebuild the list">↻ Rebuild from saved days</button>
+    </div>
+    <div class="prod-status" id="prodStatus"></div>
+    <div class="prod-tablewrap">
+      <table class="prod-table">
+        <thead><tr>
+          ${th('code','Product')}${th('size','Size')}${th('cust','Customer')}${th('ends','End')}${th('setup','Set-up')}${th('lastUsed','Last used')}<th></th>
+        </tr></thead>
+        <tbody id="prodRows">${prodRowsHTML()}</tbody>
+      </table>
+    </div>
+  </div>`;
+  paintProductRows();
+}
+function exportCatalogCSV(){
+  const rows=filteredSortedCatalog();
+  const head=['Product','Size','Customer','End','Set-up','Last used'];
+  const q=s=>{ s=String(s==null?'':s); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const lines=[head.join(',')].concat(rows.map(e=>
+    [e.code,e.size,e.cust,e.ends,setupString(e.pallet,e.stripe),e.lastUsed].map(q).join(',')));
+  const blob=new Blob([lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download='product-catalog.csv'; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },200);
 }
 
 /* ============================ Render: BOARD (TV) ============================ */
@@ -1724,7 +1893,9 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;',
 
 /* ============================ Edit event wiring ============================ */
 document.getElementById('view').addEventListener('input', e=>{
-  const t=e.target; if(mode!=='edit' && mode!=='roster') return;  // roster screen also uses this handler (role + exception-line selects)
+  const t=e.target;
+  if(t.id==='prodSearch'){ prodQuery=t.value; paintProductRows(); return; }  // Products tab search
+  if(mode!=='edit' && mode!=='roster') return;  // roster screen also uses this handler (role + exception-line selects)
   const li = t.getAttribute('data-line');
   if(li!==null){
     const idx=+li, l=board.lines[idx];
@@ -1835,6 +2006,22 @@ document.getElementById('view').addEventListener('keydown', e=>{
 });
 document.getElementById('view').addEventListener('click', async e=>{
   const t=e.target;
+  // ---- Products tab ----
+  const sortTh=t.closest && t.closest('[data-sortprod]');
+  if(sortTh){ const k=sortTh.dataset.sortprod;
+    if(prodSort.key===k) prodSort.dir*=-1; else prodSort={key:k, dir:(k==='lastUsed'?-1:1)};
+    renderProducts(); return; }
+  if(t.dataset.rmprod!==undefined){
+    const i=catalog.findIndex(x=>x._key===t.dataset.rmprod);
+    if(i>=0){ catalog.splice(i,1); saveCatalog(); paintProductRows(); } return; }
+  if(t.id==='prodExport'){ exportCatalogCSV(); return; }
+  if(t.id==='prodRebuild'){
+    const st=document.getElementById('prodStatus'); t.disabled=true;
+    if(st) st.textContent='Scanning saved days…';
+    await rebuildCatalog(st);
+    if(st) st.textContent='';
+    renderProducts(); return;
+  }
   if(t.id==='addLine'){ board.lines.push(blankLine("")); scheduleSave(); render(); }
   else if(t.id==='addPressRow'){ board.staff.presses.push(blankPressRow()); scheduleSave(); render(); }
   else if(t.id==='addName'){ const inp=document.getElementById('newName'); if(rosterAdd(inp&&inp.value)) render(); }
@@ -1952,6 +2139,7 @@ document.getElementById('todayBtn').onclick=()=>goDate(todayStr());
 document.getElementById('datePick').onchange=e=>goDate(e.target.value);
 document.getElementById('mBoard').onclick=()=>{ mode='board'; render(); };
 document.getElementById('mEdit').onclick=()=>{ mode='edit'; render(); };
+document.getElementById('mProducts').onclick=()=>{ mode='products'; render(); };
 /* TV / kiosk mode: opening the page with ?tv (e.g. the display PC's kiosk shortcut)
    forces the clean board look — hides the toolbar buttons and the Board/Edit switch —
    even though browser kiosk fullscreen doesn't trigger the Fullscreen API. The plain
@@ -2159,6 +2347,7 @@ scheduleSync();
 /* ============================ Boot ============================ */
 (async function init(){
   if(TV_MODE){ mode='board'; document.body.classList.add('fs'); }   // clean board look for the display PC
+  loadCatalog();
   await loadRoster(); await loadBoard(curDate); render();
 })();
 </script>
