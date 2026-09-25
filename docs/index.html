@@ -233,6 +233,9 @@
   .lockgate .lg-btn.no{background:var(--green);color:#0d1117}
   .lockgate .lg-btn.no:hover{filter:brightness(1.08)}
   .lockgate .lg-btn .lg-sub{font-size:13px;font-weight:700;opacity:.85}
+  .lockgate.past{border-color:var(--red)}
+  .lockgate.past .lg-title{color:var(--red)}
+  .lockgate.past .lg-btn{min-width:130px}
   /* press department rows */
   .pressrows{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
   /* fixed columns: press | operator(grows) | end | type | qty | remove */
@@ -482,7 +485,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v79';
+var APP_VERSION = 'v80';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -677,6 +680,9 @@ let saveTimer = null, saving = false, saveError = null, loadError = null;
 let recoverTimer = null;   // retry handle for auto-recovering from a failed load
 let daySaved = false;      // true when the day being viewed exists as a saved board (for slip lookup)
 let editTodayConfirmed = null;  // date string the user explicitly OK'd editing after the lock hour
+let pastEditDate = null;        // which past date the current 10-min edit window applies to
+let pastEditUntil = 0;          // epoch ms until which that past date may be edited without re-prompting
+let pastGraceTimer = null;      // re-renders (re-shows the gate) when the window expires
 let lastBoardSig = null;   // last board we've seen from storage — used to skip needless re-renders
 let lastSyncAt = null;     // when the display last confirmed it's in sync with the server
 let lastPollError = null;  // message from the most recent failed poll (shown on the floor)
@@ -701,6 +707,9 @@ function dayDelta(dateStr){
 const LOCK_HOUR = 9;
 /* Pretty-print an hour like 9 -> "9 AM", 13 -> "1 PM". */
 function fmtHour(h){ const ap=h<12?'AM':'PM'; let hh=h%12; if(hh===0)hh=12; return hh+' '+ap; }
+/* Editing a PAST day is blocked behind a Yes/No warning. Saying Yes opens a
+   timed window (below); when it runs out, the next edit re-prompts. */
+const PAST_EDIT_GRACE_MS = 10*60*1000;   // 10 minutes
 /* A big color-coded banner shown at the top of the editor telling you exactly which
    day you're editing, so you don't accidentally change today's live board when you
    meant to set up tomorrow's. */
@@ -1499,8 +1508,27 @@ function editLockGateHTML(){
     </div>
   </div></div>`;
 }
+/* Editing a PAST day needs a Yes/No confirm. Yes opens a 10-minute window for that
+   day; while it's open you edit freely, and once it lapses the next attempt re-asks. */
+function pastEditLockedNow(){
+  return dayDelta(curDate) < 0
+      && !(pastEditDate===curDate && Date.now() < pastEditUntil);
+}
+function pastEditGateHTML(){
+  return `<div class="edit-wrap"><div class="lockgate past">
+    <div class="lg-icon">⚠️</div>
+    <div class="lg-title">You are about to edit a PREVIOUS day's schedule</div>
+    <div class="lg-body"><b>${esc(fmtDateLong(curDate))}</b> has already passed.
+      Are you sure you want to do this?</div>
+    <div class="lg-btns">
+      <button class="lg-btn yes" data-confirmpast>Yes</button>
+      <button class="lg-btn no" data-cancelpast>No</button>
+    </div>
+  </div></div>`;
+}
 function renderEdit(){
   if(editLockedNow()){ document.getElementById('view').innerHTML = editLockGateHTML(); return; }
+  if(pastEditLockedNow()){ document.getElementById('view').innerHTML = pastEditGateHTML(); return; }
   { const s=conflictNames(); CFLICT_SET=s.alert; CAUTION_SET=s.caution; }  // fields to flag red / amber
   if(!board.staff.presses.length) board.staff.presses.push(blankPressRow());  // one row to start
   const lineCards = board.lines.map((l,idx)=>{
@@ -1813,6 +1841,13 @@ document.getElementById('view').addEventListener('click', async e=>{
   else if(t.id==='editRoster'){ mode='roster'; render(); }
   else if(t.id==='backToEdit'){ mode='edit'; render(); }
   else if(t.dataset.confirmtoday!==undefined){ editTodayConfirmed=todayStr(); render(); }  // unlock today's editor
+  else if(t.dataset.confirmpast!==undefined){                       // open a 10-min window on this past day
+    pastEditDate=curDate; pastEditUntil=Date.now()+PAST_EDIT_GRACE_MS;
+    if(pastGraceTimer) clearTimeout(pastGraceTimer);
+    pastGraceTimer=setTimeout(()=>{ if(mode==='edit' && curDate===pastEditDate) render(); }, PAST_EDIT_GRACE_MS);
+    render();
+  }
+  else if(t.dataset.cancelpast!==undefined){ mode='board'; render(); }  // declined -> back to board; re-asks next time
   else if(t.dataset.gotonext!==undefined){ goDate(shiftWorkday(todayStr(),+1)); }  // jump to tomorrow's board, stay in edit
   else if(t.dataset.gototoday!==undefined){ goDate(todayStr()); }
   else if(t.dataset.ri!==undefined){ rosterRemove(+t.dataset.ri); render(); }
