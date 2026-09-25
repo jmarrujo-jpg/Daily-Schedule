@@ -28,7 +28,7 @@
  *   getBoard(key)        -> board JSON | null      (key is "board:YYYY-MM-DD" or the date)
  *   setBoard(key, board) -> true
  *   listBoards()         -> ["2026-08-20", ...]
- *   getProducts()        -> [{code,size,cust,ends,setup,lastUsed}, ...]   (Product Catalog tab)
+ *   getProducts()        -> [{code,size,cust,ends,setup,lastUsed,notes}, ...]   (Product Catalog tab)
  *   setProducts([rows])  -> true
  */
 
@@ -41,7 +41,7 @@ const BOARDS_HEADER = ['Date', 'Lines Running', 'Change-Overs', 'Absent', 'Vacat
 // Product Catalog tab — one row per product/customer/end, with its set-up + last-used date.
 const PRODUCTS_TAB = 'Product Catalog';
 const PRODUCTS_REF = "'Product Catalog'";   // quoted for A1 ranges (the title has a space)
-const PRODUCTS_HEADER = ['Product', 'Size', 'Customer', 'End', 'Set-up', 'Last Used'];
+const PRODUCTS_HEADER = ['Product', 'Size', 'Customer', 'End', 'Set-up', 'Last Used', 'Notes'];
 
 export default {
   async fetch(request, env) {
@@ -208,7 +208,7 @@ function summarize(b) {
 // Columns: Product | Size | Customer | End | Set-up | Last Used
 // Set-up is one readable string, e.g. "2 Straps · Cover Caps · Wood Frame · I/S".
 async function getProducts(sheets) {
-  const rows = await sheets.values(PRODUCTS_REF + '!A2:F100000');
+  const rows = await sheets.values(PRODUCTS_REF + '!A2:G100000');
   const out = [];
   for (const r of rows) {
     const code = String((r && r[0]) || '').trim();
@@ -222,6 +222,7 @@ async function getProducts(sheets) {
       ends,
       setup: String((r && r[4]) || '').trim(),
       lastUsed: String((r && r[5]) || '').trim(),
+      notes: String((r && r[6]) || ''),
     });
   }
   return out;
@@ -234,12 +235,12 @@ async function setProducts(sheets, list) {
     const cust = String(o.cust || '').trim();
     const ends = String(o.ends || '').trim();
     if (!code && !cust && !ends) return null;
-    return [code, String(o.size || '').trim(), cust, ends, String(o.setup || '').trim(), String(o.lastUsed || '').trim()];
+    return [code, String(o.size || '').trim(), cust, ends, String(o.setup || '').trim(), String(o.lastUsed || '').trim(), String(o.notes || '')];
   }).filter(Boolean).slice(0, 20000);
-  await sheets.update(PRODUCTS_REF + '!A1:F1', [PRODUCTS_HEADER]);
+  await sheets.update(PRODUCTS_REF + '!A1:G1', [PRODUCTS_HEADER]);
   // Write data first, then clear only the rows below it (a mid-write failure can't wipe the list).
   if (rows.length) await sheets.update(PRODUCTS_REF + '!A2', rows);
-  await sheets.clear(PRODUCTS_REF + '!A' + (rows.length + 2) + ':F100000');
+  await sheets.clear(PRODUCTS_REF + '!A' + (rows.length + 2) + ':G100000');
   return true;
 }
 
@@ -435,7 +436,7 @@ async function ensureSetup(sheets) {
     await sheets.addTabs(toAdd);
     if (toAdd.includes(ROSTER_TAB)) await sheets.update(ROSTER_TAB + '!A1', [ROSTER_HEADER]);
     if (toAdd.includes(BOARDS_TAB)) await sheets.update(BOARDS_TAB + '!A1:G1', [BOARDS_HEADER]);
-    if (toAdd.includes(PRODUCTS_TAB)) await sheets.update(PRODUCTS_REF + '!A1:F1', [PRODUCTS_HEADER]);
+    if (toAdd.includes(PRODUCTS_TAB)) await sheets.update(PRODUCTS_REF + '!A1:G1', [PRODUCTS_HEADER]);
   }
   setupDone = true;
 }

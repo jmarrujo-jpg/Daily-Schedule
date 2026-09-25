@@ -237,6 +237,12 @@
   .prod-table td.code{font-weight:700;color:var(--amber)}
   .prod-table td.nowrap{white-space:nowrap}
   .prod-table .dim{color:var(--edge2)}
+  .prod-table td.prod-note{min-width:220px;padding:6px 8px}
+  .prod-table .prod-noteinput{width:100%;min-width:200px;background:var(--panel2);color:var(--text);
+    border:1px solid var(--edge2);border-radius:6px;padding:6px 8px;font-size:14px;font-family:inherit;
+    resize:vertical;min-height:34px;line-height:1.35}
+  .prod-table .prod-noteinput:focus{outline:none;border-color:var(--amber)}
+  .prod-table .prod-noteinput::placeholder{color:var(--edge2)}
   .prod-table .prod-rm{text-align:center}
   .prod-table .prod-rm .rm{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:4px 8px;border-radius:6px}
   .prod-table .prod-rm .rm:hover{background:rgba(239,68,68,.15);color:var(--red)}
@@ -510,7 +516,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v82';
+var APP_VERSION = 'v83';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -715,7 +721,7 @@ let board = null;
 let roster = [];   // list of people's names — fills the position / absent / vacation dropdowns
 let catalog = [];  // compiled product reference: each product/customer/end seen, its setup + last-used date
 let prodQuery = '';                       // Products tab search text
-let prodSort = { key:'lastUsed', dir:-1 };// Products tab sort column + direction (default: most recent first)
+let prodSort = { key:'code', dir:1 };     // Products tab sort column + direction (default: Product, smallest→largest)
 let saveTimer = null, saving = false, saveError = null, loadError = null;
 let recoverTimer = null;   // retry handle for auto-recovering from a failed load
 let daySaved = false;      // true when the day being viewed exists as a saved board (for slip lookup)
@@ -938,11 +944,11 @@ function catalogEntry(r){
   let pallet, stripe;
   if(Array.isArray(r.pallet) || Array.isArray(r.stripe)){ pallet=sortPallet(r.pallet||[]); stripe=stripeArr(r.stripe||[]); }
   else { const s=parseSetup(r.setup); pallet=s.pallet; stripe=s.stripe; }
-  return { _key:catKeyOf(code,cust,ends), code, cust, ends, size:String(r.size||'').trim(), pallet, stripe, lastUsed:String(r.lastUsed||'').trim() };
+  return { _key:catKeyOf(code,cust,ends), code, cust, ends, size:String(r.size||'').trim(), pallet, stripe, lastUsed:String(r.lastUsed||'').trim(), notes:String(r.notes||'') };
 }
 /* The catalog as sheet-shaped rows (what gets written to the Sheet / cache). */
 function catalogRows(){
-  return catalog.map(e=>({ code:e.code, size:e.size, cust:e.cust, ends:e.ends, setup:setupString(e.pallet,e.stripe), lastUsed:e.lastUsed }));
+  return catalog.map(e=>({ code:e.code, size:e.size, cust:e.cust, ends:e.ends, setup:setupString(e.pallet,e.stripe), lastUsed:e.lastUsed, notes:e.notes||'' }));
 }
 function cacheCatalogLocal(){ try{ localStorage.setItem(CATALOG_KEY, JSON.stringify(catalogRows())); }catch(e){} }
 function readCatalogCache(){ try{ const raw=localStorage.getItem(CATALOG_KEY); const a=raw?JSON.parse(raw):[]; return Array.isArray(a)?a:[]; }catch(e){ return []; } }
@@ -988,7 +994,7 @@ function catalogAbsorbBoard(bd){
       const stripe=stripeArr(j.stripe);
       let e=catalog.find(x=>x._key===key);
       if(!e){
-        catalog.push({_key:key, code, cust, ends, size, pallet, stripe, lastUsed:date});
+        catalog.push({_key:key, code, cust, ends, size, pallet, stripe, lastUsed:date, notes:''});
         changed=true;
       }else if(!e.lastUsed || (date && date>=e.lastUsed)){  // this board is same-day or newer → refresh setup + date
         e.code=code; e.cust=cust; e.ends=ends; e.size=size; e.pallet=pallet; e.stripe=stripe;
@@ -1481,14 +1487,20 @@ function filteredSortedCatalog(){
   rows.sort((a,b)=>{
     let av = key==='setup' ? setupString(a.pallet,a.stripe) : (a[key]||'');
     let bv = key==='setup' ? setupString(b.pallet,b.stripe) : (b[key]||'');
-    av=String(av).toLowerCase(); bv=String(bv).toLowerCase();
-    return av<bv ? -dir : av>bv ? dir : 0;
+    // Natural/numeric compare so 41X411 sorts before 211X413 (smallest → largest),
+    // not lexically. Ties break by customer so duplicates line up together.
+    const primary = natCmp(av,bv)*dir;
+    return primary || natCmp(a.cust||'', b.cust||'');
   });
   return rows;
 }
+/* Compare two values treating embedded numbers by value (natural order). */
+function natCmp(a,b){
+  return String(a==null?'':a).localeCompare(String(b==null?'':b), undefined, {numeric:true, sensitivity:'base'});
+}
 function prodRowsHTML(){
   const rows=filteredSortedCatalog();
-  if(!rows.length) return `<tr><td colspan="7" class="prod-empty">${catalog.length
+  if(!rows.length) return `<tr><td colspan="8" class="prod-empty">${catalog.length
     ? 'No products match your search.'
     : 'No products recorded yet. Build a board — or press “↻ Rebuild from saved days” — and they’ll appear here.'}</td></tr>`;
   const dash='<span class="dim">—</span>';
@@ -1499,6 +1511,7 @@ function prodRowsHTML(){
     <td class="mono">${esc(e.ends)||dash}</td>
     <td>${esc(setupString(e.pallet,e.stripe))||dash}</td>
     <td class="nowrap">${e.lastUsed?esc(fmtDateShort(e.lastUsed)):dash}</td>
+    <td class="prod-note"><textarea class="prod-noteinput" data-prodnote="${esc(e._key)}" rows="1" placeholder="setup, steel, notes…">${esc(e.notes||'')}</textarea></td>
     <td class="prod-rm"><button class="rm" data-rmprod="${esc(e._key)}" title="Remove from list">✕</button></td>
   </tr>`).join('');
 }
@@ -1523,7 +1536,7 @@ function renderProducts(){
     <div class="prod-tablewrap">
       <table class="prod-table">
         <thead><tr>
-          ${th('code','Product')}${th('size','Size')}${th('cust','Customer')}${th('ends','End')}${th('setup','Set-up')}${th('lastUsed','Last used')}<th></th>
+          ${th('code','Product')}${th('size','Size')}${th('cust','Customer')}${th('ends','End')}${th('setup','Set-up')}${th('lastUsed','Last used')}<th>Notes</th><th></th>
         </tr></thead>
         <tbody id="prodRows">${prodRowsHTML()}</tbody>
       </table>
@@ -1533,10 +1546,10 @@ function renderProducts(){
 }
 function exportCatalogCSV(){
   const rows=filteredSortedCatalog();
-  const head=['Product','Size','Customer','End','Set-up','Last used'];
+  const head=['Product','Size','Customer','End','Set-up','Last used','Notes'];
   const q=s=>{ s=String(s==null?'':s); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
   const lines=[head.join(',')].concat(rows.map(e=>
-    [e.code,e.size,e.cust,e.ends,setupString(e.pallet,e.stripe),e.lastUsed].map(q).join(',')));
+    [e.code,e.size,e.cust,e.ends,setupString(e.pallet,e.stripe),e.lastUsed,e.notes||''].map(q).join(',')));
   const blob=new Blob([lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob), a=document.createElement('a');
   a.href=url; a.download='product-catalog.csv'; document.body.appendChild(a); a.click();
@@ -1953,6 +1966,11 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;',
 document.getElementById('view').addEventListener('input', e=>{
   const t=e.target;
   if(t.id==='prodSearch'){ prodQuery=t.value; paintProductRows(); return; }  // Products tab search
+  if(t.dataset.prodnote!==undefined){                                        // Products tab notes (save, keep focus)
+    const e=catalog.find(x=>x._key===t.dataset.prodnote);
+    if(e){ e.notes=t.value; saveCatalog(); }
+    return;
+  }
   if(mode!=='edit' && mode!=='roster') return;  // roster screen also uses this handler (role + exception-line selects)
   const li = t.getAttribute('data-line');
   if(li!==null){
