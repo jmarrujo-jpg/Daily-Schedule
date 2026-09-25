@@ -197,6 +197,26 @@
   /* amber caution: a soft heads-up (e.g. covering Run 1st then Run 2nd) — edit view only */
   select.caution{border:2px solid var(--amber) !important;background:rgba(255,179,0,.14) !important;color:var(--text) !important}
   select.caution option{background:var(--panel) !important;color:var(--text) !important}
+  /* which-day-are-you-editing warning banner (top of the editor) */
+  .daywarn{border-radius:12px;padding:14px 16px;margin-bottom:14px;border:2px solid var(--edge2);
+    background:var(--panel2);display:flex;flex-direction:column;gap:6px}
+  .daywarn .dw-main{font-family:var(--disp);font-weight:800;font-size:20px;line-height:1.2}
+  .daywarn .dw-sub{font-size:14px;opacity:.9}
+  .daywarn .dw-btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .daywarn-btn{font-family:var(--disp);font-weight:800;font-size:15px;cursor:pointer;
+    border-radius:8px;padding:9px 14px;border:2px solid transparent;background:#fff;color:#0d1117}
+  .daywarn-btn.ghost{background:transparent;border-color:var(--edge2);color:var(--text)}
+  /* today = amber caution; late in the shift = loud red; past = red; next day = green; future = blue */
+  .daywarn.today{border-color:var(--amber);background:rgba(255,179,0,.12)}
+  .daywarn.today .dw-main{color:var(--amber)}
+  .daywarn.today.late{border-color:var(--red);background:rgba(239,68,68,.15)}
+  .daywarn.today.late .dw-main{color:var(--red)}
+  .daywarn.past{border-color:var(--red);background:rgba(239,68,68,.15)}
+  .daywarn.past .dw-main{color:var(--red)}
+  .daywarn.next{border-color:var(--green);background:rgba(41,196,103,.12)}
+  .daywarn.next .dw-main{color:var(--green)}
+  .daywarn.future{border-color:var(--blue);background:rgba(58,160,255,.12)}
+  .daywarn.future .dw-main{color:var(--blue)}
   /* press department rows */
   .pressrows{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
   /* fixed columns: press | operator(grows) | end | type | qty | remove */
@@ -446,7 +466,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v77';
+var APP_VERSION = 'v78';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -651,6 +671,48 @@ function keyFor(date){ return "board:"+date; }
 function fmtDateLong(date){
   const [y,m,d]=date.split('-').map(Number);
   return new Date(y,m-1,d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+}
+/* Whole-day difference between a YYYY-MM-DD string and today (0=today, +1=tomorrow, -1=yesterday). */
+function dayDelta(dateStr){
+  const [ay,am,ad]=todayStr().split('-').map(Number);
+  const [by,bm,bd]=dateStr.split('-').map(Number);
+  return Math.round((new Date(by,bm-1,bd)-new Date(ay,am-1,ad))/86400000);
+}
+/* Hour of the day (24h) at/after which "you're still editing today" turns into a
+   loud stop — i.e. towards the end of the shift you should be building tomorrow. */
+const EOD_HOUR = 12;
+/* A big color-coded banner shown at the top of the editor telling you exactly which
+   day you're editing, so you don't accidentally change today's live board when you
+   meant to set up tomorrow's. */
+function editDayBanner(){
+  const nextWd = shiftWorkday(todayStr(),+1);         // the next work day (skips the weekend)
+  const long   = esc(fmtDateLong(curDate));
+  const jumpNext = `<button class="daywarn-btn" data-gotonext>➜ Switch to ${esc(fmtDateLong(nextWd))}</button>`;
+  const jumpToday= `<button class="daywarn-btn ghost" data-gototoday>Go to today</button>`;
+  if(curDate===todayStr()){
+    const late = new Date().getHours() >= EOD_HOUR;
+    return `<div class="daywarn today${late?' late':''}">
+      <div class="dw-main">${late?'🛑':'✏️'} You are editing <b>TODAY</b> — ${long}.</div>
+      <div class="dw-sub">${late
+        ? "It's late in the shift — if you're setting up for tomorrow, switch now so you don't overwrite today's live board."
+        : "This is today's live board. Setting up for the next day? Switch first."}</div>
+      <div class="dw-btns">${jumpNext}</div></div>`;
+  }
+  const delta = dayDelta(curDate);
+  if(delta < 0){
+    return `<div class="daywarn past">
+      <div class="dw-main">⚠️ You are editing a <b>PAST</b> board — ${long}.</div>
+      <div class="dw-sub">This day has already gone by. Changes here won't help today or tomorrow.</div>
+      <div class="dw-btns">${jumpNext} ${jumpToday}</div></div>`;
+  }
+  if(curDate===nextWd){
+    return `<div class="daywarn next">
+      <div class="dw-main">✅ You are editing <b>${long}</b> — the next work day.</div>
+      <div class="dw-sub">This is the right place to build tomorrow's board.</div></div>`;
+  }
+  return `<div class="daywarn future">
+    <div class="dw-main">📅 You are editing <b>${long}</b> — a future day.</div>
+    <div class="dw-btns">${jumpToday}</div></div>`;
 }
 function num(v){ const n=parseFloat(String(v).replace(/,/g,'')); return isFinite(n)?n:0; }
 function commas(n){ return n==null||n===''?'':Number(n).toLocaleString('en-US'); }
@@ -1475,6 +1537,7 @@ function renderEdit(){
 
   document.getElementById('view').innerHTML = `
     <div class="edit-wrap">
+      ${editDayBanner()}
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <div class="savechip" id="saveChip"><span class="dot"></span><span class="txt">Saved</span></div>
         <div class="spacer" style="flex:1"></div>
@@ -1706,6 +1769,8 @@ document.getElementById('view').addEventListener('click', async e=>{
   else if(t.id==='addName'){ const inp=document.getElementById('newName'); if(rosterAdd(inp&&inp.value)) render(); }
   else if(t.id==='editRoster'){ mode='roster'; render(); }
   else if(t.id==='backToEdit'){ mode='edit'; render(); }
+  else if(t.dataset.gotonext!==undefined){ goDate(shiftWorkday(todayStr(),+1)); }  // jump to tomorrow's board, stay in edit
+  else if(t.dataset.gototoday!==undefined){ goDate(todayStr()); }
   else if(t.dataset.ri!==undefined){ rosterRemove(+t.dataset.ri); render(); }
   else if(t.dataset.exadd!==undefined){                          // add an exception entry
     const p=roster[+t.dataset.exadd];
