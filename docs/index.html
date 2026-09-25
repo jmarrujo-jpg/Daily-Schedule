@@ -217,6 +217,18 @@
   .daywarn.next .dw-main{color:var(--green)}
   .daywarn.future{border-color:var(--blue);background:rgba(58,160,255,.12)}
   .daywarn.future .dw-main{color:var(--blue)}
+  /* Product-code suggestion dropdown (custom, styled) */
+  .prod-suggest{position:fixed;z-index:9999;max-height:320px;overflow-y:auto;
+    background:var(--panel2);border:1px solid var(--edge2);border-radius:10px;
+    box-shadow:0 12px 34px rgba(0,0,0,.5);padding:4px;min-width:280px}
+  .prod-suggest .ps-item{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:baseline;
+    padding:9px 12px;border-radius:7px;cursor:pointer}
+  .prod-suggest .ps-item:hover,.prod-suggest .ps-item.active{background:rgba(255,179,0,.15)}
+  .prod-suggest .ps-code{grid-column:1;font-family:var(--disp);font-weight:800;font-size:15px;color:var(--amber);letter-spacing:.02em}
+  .prod-suggest .ps-cust{grid-column:2;font-size:14px;color:var(--text)}
+  .prod-suggest .ps-ends{grid-column:1 / -1;font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .prod-suggest .ps-stripe{grid-column:3;grid-row:1;font-family:var(--disp);font-weight:700;font-size:11px;
+    color:var(--cyan);border:1px solid var(--edge2);border-radius:5px;padding:1px 6px;white-space:nowrap}
   /* Products catalog tab */
   .prod-wrap{max-width:1400px;margin:0 auto}
   .prod-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
@@ -516,7 +528,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v84';
+var APP_VERSION = 'v85';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -946,23 +958,66 @@ function catalogEntry(r){
   else { const s=parseSetup(r.setup); pallet=s.pallet; stripe=s.stripe; }
   return { _key:catKeyOf(code,cust,ends), code, cust, ends, size:String(r.size||'').trim(), pallet, stripe, lastUsed:String(r.lastUsed||'').trim(), notes:String(r.notes||'') };
 }
-/* A single readable suggestion string for a catalog entry, e.g.
-   "41X411  ·  Entrust  ·  401 1 AUTOM  ·  I/S". Used as the <datalist> option
-   value so the code field can offer product suggestions and auto-fill on pick. */
-function productComposite(e){
-  const stripe = stripeArr(e.stripe).join(' ');
-  return [e.code, e.cust, e.ends, stripe].map(s=>String(s||'').trim()).filter(Boolean).join('  ·  ');
+/* ---- Product code suggestions: a custom styled dropdown under the code field ----
+   Typing filters known products; picking one auto-fills customer, ends & set-up. */
+let _psEl=null, _psInput=null, _psItems=[], _psActive=-1, _psHideTimer=null;
+function psEl(){
+  if(_psEl) return _psEl;
+  const d=document.createElement('div');
+  d.id='prodSuggest'; d.className='prod-suggest'; d.style.display='none';
+  // mousedown (not click) so the pick lands before the input's blur hides the list
+  d.addEventListener('mousedown', ev=>{
+    const it=ev.target.closest('.ps-item'); if(!it) return;
+    ev.preventDefault(); pickSuggest(+it.dataset.i);
+  });
+  document.body.appendChild(d);
+  return _psEl=d;
 }
-/* Map every suggestion string -> its catalog entry, for reverse lookup on pick. */
-function catalogByComposite(){
-  const m=new Map();
-  catalog.forEach(e=>{ if(e.code||e.cust||e.ends) m.set(productComposite(e), e); });
-  return m;
+function suggestMatches(q){
+  q=String(q||'').trim().toLowerCase();
+  let rows=catalog.filter(e=>e.code||e.cust||e.ends);
+  if(q) rows=rows.filter(e=> (e.code+' '+e.cust+' '+e.ends).toLowerCase().includes(q));
+  rows.sort((a,b)=> natCmp(a.code||'',b.code||'') || natCmp(a.cust||'',b.cust||''));
+  return rows.slice(0,60);
 }
-/* The <datalist> of product suggestions (sorted smallest→largest by code). */
-function productCodeDatalistHTML(){
-  const rows=catalog.slice().filter(e=>e.code||e.cust||e.ends).sort((a,b)=>natCmp(a.code||'',b.code||''));
-  return `<datalist id="prodCodeList">${rows.map(e=>`<option value="${esc(productComposite(e))}"></option>`).join('')}</datalist>`;
+function positionSuggest(){
+  if(!_psInput || !_psEl) return;
+  const r=_psInput.getBoundingClientRect();
+  _psEl.style.left=Math.round(r.left)+'px';
+  _psEl.style.top=Math.round(r.bottom+3)+'px';
+  _psEl.style.minWidth=Math.round(r.width)+'px';
+}
+function paintSuggest(){
+  const el=psEl();
+  if(!_psItems.length){ el.style.display='none'; return; }
+  el.innerHTML=_psItems.map((e,i)=>{
+    const stripe=stripeArr(e.stripe).join(' ');
+    return `<div class="ps-item${i===_psActive?' active':''}" data-i="${i}">
+      <span class="ps-code">${esc(e.code)||'—'}</span>
+      <span class="ps-cust">${esc(e.cust)||''}</span>
+      <span class="ps-ends">${esc(e.ends)||''}</span>
+      ${stripe?`<span class="ps-stripe">${esc(stripe)}</span>`:''}
+    </div>`;
+  }).join('');
+  positionSuggest();
+  el.style.display='block';
+}
+function openCodeSuggest(input){ _psInput=input; _psActive=-1; _psItems=suggestMatches(input.value); paintSuggest(); }
+function hideSuggest(){ if(_psEl) _psEl.style.display='none'; _psInput=null; _psItems=[]; _psActive=-1; }
+function pickSuggest(i){
+  const e=_psItems[i]; if(!e || !_psInput) return;
+  const li=+_psInput.dataset.line, ji=+_psInput.dataset.job, l=board.lines[li];
+  if(!l) return;
+  if(!l.jobs[ji]) l.jobs[ji]=blankJob();
+  const j=l.jobs[ji];
+  j.code=e.code; j.cust=e.cust; j.ends=e.ends; j.pallet=sortPallet(e.pallet); j.stripe=stripeArr(e.stripe);
+  hideSuggest(); scheduleSave(); render();
+}
+/* Fold the current board's products into the catalog — but only when the user has
+   actually committed (window focused; not mid-typing after tabbing away to verify). */
+function maybeAbsorbBoard(){
+  if(!board || !document.hasFocus()) return;
+  if(catalogAbsorbBoard(board)) saveCatalog();
 }
 /* The catalog as sheet-shaped rows (what gets written to the Sheet / cache). */
 function catalogRows(){
@@ -1098,8 +1153,7 @@ function scheduleSave(){
   saving=true; saveError=null; updateSaveChip();
   clearTimeout(saveTimer);
   saveTimer=setTimeout(async()=>{
-    try{ await Store.set(keyFor(board.date), board); saveError=null; lastBoardSig=boardSig(board); lastSyncAt=Date.now();
-      if(catalogAbsorbBoard(board)) saveCatalog(); }   // keep the product reference list current
+    try{ await Store.set(keyFor(board.date), board); saveError=null; lastBoardSig=boardSig(board); lastSyncAt=Date.now(); }
     catch(e){ saveError = e && e.message ? e.message : 'Save failed'; }
     saving=false; updateSaveChip();
   }, 500);
@@ -1806,7 +1860,7 @@ function renderEdit(){
           : `<span>Product ${ji+1}</span>`}<div class="spacer" style="flex:1"></div>${l.jobs.length>1?`<button data-rmjob="${idx}" data-ji="${ji}">remove</button>`:''}</div>
         <div class="row2">
           <div class="fld"><label>Product code <span class="hint">(pick a suggestion to auto-fill customer, ends &amp; set-up)</span></label>
-            <input value="${esc(j.code)}" data-line="${idx}" data-job="${ji}" data-jf="code" list="prodCodeList" autocomplete="off" placeholder="e.g. 10432"></div>
+            <input value="${esc(j.code)}" data-line="${idx}" data-job="${ji}" data-jf="code" autocomplete="off" placeholder="e.g. 10432"></div>
           <div class="fld"><label>Customer</label>
             <input value="${esc(j.cust)}" data-line="${idx}" data-job="${ji}" data-jf="cust" placeholder="e.g. Juanitas"></div>
         </div>
@@ -1867,7 +1921,6 @@ function renderEdit(){
   document.getElementById('view').innerHTML = `
     <div class="edit-wrap">
       ${editDayBanner()}
-      ${productCodeDatalistHTML()}
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <div class="savechip" id="saveChip"><span class="dot"></span><span class="txt">Saved</span></div>
         <div class="spacer" style="flex:1"></div>
@@ -2014,14 +2067,9 @@ document.getElementById('view').addEventListener('input', e=>{
       if(!l.jobs[ji]) l.jobs[ji]=blankJob();
       const jf=t.dataset.jf;
       if(jf==='code'){
-        const hit=catalogByComposite().get(t.value);           // picked a suggestion → auto-fill the rest
-        if(hit){
-          const j=l.jobs[ji];
-          j.code=hit.code; j.cust=hit.cust; j.ends=hit.ends;
-          j.pallet=sortPallet(hit.pallet); j.stripe=stripeArr(hit.stripe);
-          scheduleSave(); render(); return;
-        }
-        l.jobs[ji].code = upperField(t); scheduleSave(); return; // plain typing
+        l.jobs[ji].code = upperField(t); scheduleSave();
+        openCodeSuggest(t);                                     // refresh the suggestion dropdown as they type
+        return;
       }
       // order/made are comma-formatted numbers; customer and ends are upper-cased as you type.
       l.jobs[ji][jf] = (jf==='order'||jf==='made') ? commaField(t) : upperField(t);
@@ -2103,11 +2151,36 @@ document.getElementById('view').addEventListener('input', e=>{
   if(t.dataset.staff!==undefined){ board.staff[t.dataset.staff]=t.value; scheduleSave(); return; }
 });
 document.getElementById('view').addEventListener('keydown', e=>{
+  // Product-code suggestion dropdown: arrow to move, Enter to pick, Esc to close
+  if(_psInput && e.target===_psInput && _psEl && _psEl.style.display!=='none' && _psItems.length){
+    if(e.key==='ArrowDown'){ e.preventDefault(); _psActive=Math.min(_psActive+1,_psItems.length-1); paintSuggest(); return; }
+    if(e.key==='ArrowUp'){   e.preventDefault(); _psActive=Math.max(_psActive-1,0); paintSuggest(); return; }
+    if(e.key==='Enter' && _psActive>=0){ e.preventDefault(); pickSuggest(_psActive); return; }
+    if(e.key==='Escape'){ hideSuggest(); return; }
+  }
   if(mode==='roster' && e.target && e.target.id==='newName' && e.key==='Enter'){
     e.preventDefault();
     if(rosterAdd(e.target.value)) render();
   }
 });
+// Open the product-code suggestions when a code field gains focus
+document.getElementById('view').addEventListener('focusin', e=>{
+  if(mode==='edit' && e.target.dataset && e.target.dataset.jf==='code') openCodeSuggest(e.target);
+});
+// Hide on blur (slight delay so a mousedown pick registers first)
+document.getElementById('view').addEventListener('focusout', e=>{
+  if(e.target.dataset && e.target.dataset.jf==='code'){ clearTimeout(_psHideTimer); _psHideTimer=setTimeout(hideSuggest,150); }
+});
+// A product field committed (blur after edit) → record it, unless the user tabbed
+// away to verify (window unfocused) mid-typing.
+document.getElementById('view').addEventListener('change', e=>{
+  const t=e.target;
+  if(mode==='edit' && t.dataset && t.dataset.job!==undefined &&
+     (t.dataset.jf==='code'||t.dataset.jf==='cust'||t.dataset.jf==='ends')) maybeAbsorbBoard();
+});
+// Keep the floating dropdown glued to its input while scrolling / resizing
+window.addEventListener('scroll', ()=>{ if(_psInput) positionSuggest(); }, true);
+window.addEventListener('resize', ()=>{ if(_psInput) positionSuggest(); });
 document.getElementById('view').addEventListener('click', async e=>{
   const t=e.target;
   // ---- Products tab ----
@@ -2228,7 +2301,7 @@ document.getElementById('view').addEventListener('click', async e=>{
 });
 
 /* ============================ Nav / mode / fullscreen ============================ */
-async function goDate(date){ curDate=date; await loadBoard(date); render(); }
+async function goDate(date){ if(mode==='edit') maybeAbsorbBoard(); hideSuggest(); curDate=date; await loadBoard(date); render(); }
 /* Step one work-day in a direction, skipping Sat/Sun. */
 function shiftWorkday(dateStr, dir){
   const [y,m,d]=dateStr.split('-').map(Number);
@@ -2241,9 +2314,9 @@ document.getElementById('prevDay').onclick=()=>{ goDate(shiftWorkday(curDate,-1)
 document.getElementById('nextDay').onclick=()=>{ goDate(shiftWorkday(curDate,+1)); };
 document.getElementById('todayBtn').onclick=()=>goDate(todayStr());
 document.getElementById('datePick').onchange=e=>goDate(e.target.value);
-document.getElementById('mBoard').onclick=()=>{ mode='board'; render(); };
+document.getElementById('mBoard').onclick=()=>{ if(mode==='edit') maybeAbsorbBoard(); hideSuggest(); mode='board'; render(); };
 document.getElementById('mEdit').onclick=()=>{ mode='edit'; render(); };
-document.getElementById('mProducts').onclick=()=>{ mode='products'; render(); };
+document.getElementById('mProducts').onclick=()=>{ if(mode==='edit') maybeAbsorbBoard(); hideSuggest(); mode='products'; render(); };
 /* TV / kiosk mode: opening the page with ?tv (e.g. the display PC's kiosk shortcut)
    forces the clean board look — hides the toolbar buttons and the Board/Edit switch —
    even though browser kiosk fullscreen doesn't trigger the Fullscreen API. The plain
