@@ -510,7 +510,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v81';
+var APP_VERSION = 'v82';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -693,6 +693,18 @@ const Store = {
   async setRoster(list){
     if(API_URL){ await callApi('setRoster',[list]); return; }
     localStorage.setItem('roster', JSON.stringify(list));
+  },
+  /* Product catalog rows [{code,size,cust,ends,setup,lastUsed}] — stored in the
+     "Product Catalog" tab of the Google Sheet (via the Worker) when API_URL is
+     set, otherwise in this browser's localStorage. */
+  async getProducts(){
+    if(API_URL) return await callApi('getProducts',[]);
+    const raw = localStorage.getItem('productCatalog');
+    return raw ? JSON.parse(raw) : [];
+  },
+  async setProducts(rows){
+    if(API_URL){ await callApi('setProducts',[rows]); return; }
+    localStorage.setItem('productCatalog', JSON.stringify(rows));
   }
 };
 
@@ -900,19 +912,65 @@ async function loadRoster(){
 }
 
 /* ---- Product catalog (a running reference list of every product/customer/end) ----
-   Kept in this browser's localStorage. It fills in automatically as boards are
-   saved, and "Rebuild" scans the saved history from the shared store. Each entry:
+   The shared copy lives in the "Product Catalog" tab of the Google Sheet (via the
+   Worker); a local cache in this browser is the fallback when offline or before the
+   Worker is redeployed. Each in-memory entry:
    { code, size, cust, ends, pallet:[], stripe:[], lastUsed:"YYYY-MM-DD" }. */
 const CATALOG_KEY = 'productCatalog';
+let catalogSaveTimer = null;   // debounces the push to the Google Sheet
 function catKeyOf(code,cust,ends){ return ((code||'')+'\u0001'+(cust||'')+'\u0001'+(ends||'')).toUpperCase(); }
-function loadCatalog(){
-  try{ const raw=localStorage.getItem(CATALOG_KEY); catalog = raw?JSON.parse(raw):[]; }catch(e){ catalog=[]; }
-  if(!Array.isArray(catalog)) catalog=[];
-  catalog.forEach(e=>{ if(!e._key) e._key=catKeyOf(e.code,e.cust,e.ends); });
-}
-function saveCatalog(){ try{ localStorage.setItem(CATALOG_KEY, JSON.stringify(catalog)); }catch(e){} }
 function setupString(pallet,stripe){
   return sortPallet(pallet).concat(stripeArr(stripe)).join(' · ');
+}
+/* Split a "2 Straps · Cover Caps · I/S" string back into pallet + stripe arrays. */
+function parseSetup(str){
+  const pallet=[], stripe=[];
+  String(str||'').split('·').map(s=>s.trim()).filter(Boolean).forEach(p=>{
+    if(STRIPE_OPTS.includes(p)) stripe.push(p); else pallet.push(p);
+  });
+  return { pallet:sortPallet(pallet), stripe:stripeArr(stripe) };
+}
+/* Sheet-shaped row {code,size,cust,ends,setup,lastUsed} OR an old cached entry
+   (with pallet/stripe arrays) -> a normalized in-memory entry. */
+function catalogEntry(r){
+  r=r||{};
+  const code=String(r.code||'').trim(), cust=String(r.cust||'').trim(), ends=String(r.ends||'').trim();
+  let pallet, stripe;
+  if(Array.isArray(r.pallet) || Array.isArray(r.stripe)){ pallet=sortPallet(r.pallet||[]); stripe=stripeArr(r.stripe||[]); }
+  else { const s=parseSetup(r.setup); pallet=s.pallet; stripe=s.stripe; }
+  return { _key:catKeyOf(code,cust,ends), code, cust, ends, size:String(r.size||'').trim(), pallet, stripe, lastUsed:String(r.lastUsed||'').trim() };
+}
+/* The catalog as sheet-shaped rows (what gets written to the Sheet / cache). */
+function catalogRows(){
+  return catalog.map(e=>({ code:e.code, size:e.size, cust:e.cust, ends:e.ends, setup:setupString(e.pallet,e.stripe), lastUsed:e.lastUsed }));
+}
+function cacheCatalogLocal(){ try{ localStorage.setItem(CATALOG_KEY, JSON.stringify(catalogRows())); }catch(e){} }
+function readCatalogCache(){ try{ const raw=localStorage.getItem(CATALOG_KEY); const a=raw?JSON.parse(raw):[]; return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+/* Load the shared catalog (falls back to the local cache if the Sheet is unreachable
+   or the Worker hasn't been redeployed with the products endpoints yet). */
+async function loadCatalog(){
+  let rows;
+  try{ rows = await Store.getProducts(); }
+  catch(e){ rows = readCatalogCache(); }        // offline, or Worker lacks getProducts
+  if(!Array.isArray(rows)) rows = [];
+  const map=new Map();
+  rows.map(catalogEntry).forEach(e=>{
+    if(!e.code && !e.cust && !e.ends) return;
+    const ex=map.get(e._key);
+    if(!ex || (e.lastUsed||'') >= (ex.lastUsed||'')) map.set(e._key,e);
+  });
+  catalog=[...map.values()];
+  cacheCatalogLocal();
+  if(mode==='products') render();               // refresh the tab if it's open
+}
+/* Save the catalog: cache locally now, and push to the Google Sheet (debounced). */
+function saveCatalog(){
+  cacheCatalogLocal();
+  if(!API_URL) return;                          // localStorage-only mode: cache IS the store
+  clearTimeout(catalogSaveTimer);
+  catalogSaveTimer=setTimeout(async()=>{
+    try{ await Store.setProducts(catalogRows()); }catch(e){ /* keep the local cache; retries on next change */ }
+  }, 1500);
 }
 /* Fold every product on a board into the catalog, keeping the most-recent setup
    and last-used date for each product/customer/end. Returns true if anything changed. */
@@ -2347,8 +2405,9 @@ scheduleSync();
 /* ============================ Boot ============================ */
 (async function init(){
   if(TV_MODE){ mode='board'; document.body.classList.add('fs'); }   // clean board look for the display PC
-  loadCatalog();
+  catalog = readCatalogCache().map(catalogEntry).filter(e=>e.code||e.cust||e.ends);  // instant local view
   await loadRoster(); await loadBoard(curDate); render();
+  loadCatalog();   // then refresh the shared catalog from the Google Sheet in the background
 })();
 </script>
 </body>

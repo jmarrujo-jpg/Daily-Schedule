@@ -28,6 +28,8 @@
  *   getBoard(key)        -> board JSON | null      (key is "board:YYYY-MM-DD" or the date)
  *   setBoard(key, board) -> true
  *   listBoards()         -> ["2026-08-20", ...]
+ *   getProducts()        -> [{code,size,cust,ends,setup,lastUsed}, ...]   (Product Catalog tab)
+ *   setProducts([rows])  -> true
  */
 
 // The schedule workbook — used when the SHEET_ID variable isn't set.
@@ -36,6 +38,10 @@ const DEFAULT_SHEET_ID = '1rlfSNCsAdKroo-ZfalsLXWm3xVSiqd5DoAXtQuTBriI';
 const ROSTER_TAB = 'Roster';
 const BOARDS_TAB = 'Boards';
 const BOARDS_HEADER = ['Date', 'Lines Running', 'Change-Overs', 'Absent', 'Vacation', 'Updated', 'Board JSON'];
+// Product Catalog tab — one row per product/customer/end, with its set-up + last-used date.
+const PRODUCTS_TAB = 'Product Catalog';
+const PRODUCTS_REF = "'Product Catalog'";   // quoted for A1 ranges (the title has a space)
+const PRODUCTS_HEADER = ['Product', 'Size', 'Customer', 'End', 'Set-up', 'Last Used'];
 
 export default {
   async fetch(request, env) {
@@ -105,6 +111,8 @@ async function handle(fn, args, env) {
     case 'setRoster': return setRoster(sheets, args[0]);
     case 'getBoard':  return getBoard(sheets, args[0]);
     case 'setBoard':  return setBoard(sheets, args[0], args[1]);
+    case 'getProducts': return getProducts(sheets);
+    case 'setProducts': return setProducts(sheets, args[0]);
     case 'listBoards': {
       const rows = await sheets.values(BOARDS_TAB + '!A2:A100000');
       return rows.map((r) => String(r[0] || '')).filter(Boolean);
@@ -194,6 +202,45 @@ function summarize(b) {
     ? v.map((x) => String(x || '').trim()).filter(Boolean).join(', ')
     : String(v || '').split('\n').map((x) => x.trim()).filter(Boolean).join(', ');
   return { lines, co, absent: asList(s.absent), vacation: asList(s.vacation) };
+}
+
+// ---------------- Product Catalog ----------------
+// Columns: Product | Size | Customer | End | Set-up | Last Used
+// Set-up is one readable string, e.g. "2 Straps · Cover Caps · Wood Frame · I/S".
+async function getProducts(sheets) {
+  const rows = await sheets.values(PRODUCTS_REF + '!A2:F100000');
+  const out = [];
+  for (const r of rows) {
+    const code = String((r && r[0]) || '').trim();
+    const cust = String((r && r[2]) || '').trim();
+    const ends = String((r && r[3]) || '').trim();
+    if (!code && !cust && !ends) continue;
+    out.push({
+      code,
+      size: String((r && r[1]) || '').trim(),
+      cust,
+      ends,
+      setup: String((r && r[4]) || '').trim(),
+      lastUsed: String((r && r[5]) || '').trim(),
+    });
+  }
+  return out;
+}
+
+async function setProducts(sheets, list) {
+  const rows = (Array.isArray(list) ? list : []).map((p) => {
+    const o = (p && typeof p === 'object') ? p : {};
+    const code = String(o.code || '').trim();
+    const cust = String(o.cust || '').trim();
+    const ends = String(o.ends || '').trim();
+    if (!code && !cust && !ends) return null;
+    return [code, String(o.size || '').trim(), cust, ends, String(o.setup || '').trim(), String(o.lastUsed || '').trim()];
+  }).filter(Boolean).slice(0, 20000);
+  await sheets.update(PRODUCTS_REF + '!A1:F1', [PRODUCTS_HEADER]);
+  // Write data first, then clear only the rows below it (a mid-write failure can't wipe the list).
+  if (rows.length) await sheets.update(PRODUCTS_REF + '!A2', rows);
+  await sheets.clear(PRODUCTS_REF + '!A' + (rows.length + 2) + ':F100000');
+  return true;
 }
 
 function dateFromKey(k) {
@@ -383,10 +430,12 @@ async function ensureSetup(sheets) {
   const toAdd = [];
   if (!titles.includes(ROSTER_TAB)) toAdd.push(ROSTER_TAB);
   if (!titles.includes(BOARDS_TAB)) toAdd.push(BOARDS_TAB);
+  if (!titles.includes(PRODUCTS_TAB)) toAdd.push(PRODUCTS_TAB);
   if (toAdd.length) {
     await sheets.addTabs(toAdd);
     if (toAdd.includes(ROSTER_TAB)) await sheets.update(ROSTER_TAB + '!A1', [ROSTER_HEADER]);
     if (toAdd.includes(BOARDS_TAB)) await sheets.update(BOARDS_TAB + '!A1:G1', [BOARDS_HEADER]);
+    if (toAdd.includes(PRODUCTS_TAB)) await sheets.update(PRODUCTS_REF + '!A1:F1', [PRODUCTS_HEADER]);
   }
   setupDone = true;
 }
