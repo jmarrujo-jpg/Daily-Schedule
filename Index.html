@@ -217,6 +217,22 @@
   .daywarn.next .dw-main{color:var(--green)}
   .daywarn.future{border-color:var(--blue);background:rgba(58,160,255,.12)}
   .daywarn.future .dw-main{color:var(--blue)}
+  /* after-9am lock gate: confirm before editing today's live board */
+  .lockgate{max-width:640px;margin:40px auto;text-align:center;background:var(--panel2);
+    border:2px solid var(--amber);border-radius:16px;padding:32px 28px;
+    box-shadow:0 10px 40px rgba(0,0,0,.4)}
+  .lockgate .lg-icon{font-size:44px;line-height:1;margin-bottom:10px}
+  .lockgate .lg-title{font-family:var(--disp);font-weight:800;font-size:26px;color:var(--amber);
+    margin-bottom:12px;line-height:1.2}
+  .lockgate .lg-body{font-size:16px;line-height:1.5;opacity:.92;margin-bottom:24px}
+  .lockgate .lg-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+  .lockgate .lg-btn{font-family:var(--disp);font-weight:800;font-size:17px;cursor:pointer;
+    border-radius:10px;padding:14px 20px;border:2px solid transparent;min-width:210px;line-height:1.25}
+  .lockgate .lg-btn.yes{background:transparent;border-color:var(--red);color:var(--red)}
+  .lockgate .lg-btn.yes:hover{background:rgba(239,68,68,.12)}
+  .lockgate .lg-btn.no{background:var(--green);color:#0d1117}
+  .lockgate .lg-btn.no:hover{filter:brightness(1.08)}
+  .lockgate .lg-btn .lg-sub{font-size:13px;font-weight:700;opacity:.85}
   /* press department rows */
   .pressrows{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
   /* fixed columns: press | operator(grows) | end | type | qty | remove */
@@ -466,7 +482,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v78';
+var APP_VERSION = 'v79';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -660,6 +676,7 @@ let roster = [];   // list of people's names — fills the position / absent / v
 let saveTimer = null, saving = false, saveError = null, loadError = null;
 let recoverTimer = null;   // retry handle for auto-recovering from a failed load
 let daySaved = false;      // true when the day being viewed exists as a saved board (for slip lookup)
+let editTodayConfirmed = null;  // date string the user explicitly OK'd editing after the lock hour
 let lastBoardSig = null;   // last board we've seen from storage — used to skip needless re-renders
 let lastSyncAt = null;     // when the display last confirmed it's in sync with the server
 let lastPollError = null;  // message from the most recent failed poll (shown on the floor)
@@ -678,9 +695,12 @@ function dayDelta(dateStr){
   const [by,bm,bd]=dateStr.split('-').map(Number);
   return Math.round((new Date(by,bm-1,bd)-new Date(ay,am-1,ad))/86400000);
 }
-/* Hour of the day (24h) at/after which "you're still editing today" turns into a
-   loud stop — i.e. towards the end of the shift you should be building tomorrow. */
-const EOD_HOUR = 12;
+/* Hour of the day (24h) at/after which editing TODAY's live board is locked behind
+   a confirm — before this you edit today freely; after it, you must say "yes, edit
+   today" or you're sent to tomorrow's schedule instead. */
+const LOCK_HOUR = 9;
+/* Pretty-print an hour like 9 -> "9 AM", 13 -> "1 PM". */
+function fmtHour(h){ const ap=h<12?'AM':'PM'; let hh=h%12; if(hh===0)hh=12; return hh+' '+ap; }
 /* A big color-coded banner shown at the top of the editor telling you exactly which
    day you're editing, so you don't accidentally change today's live board when you
    meant to set up tomorrow's. */
@@ -690,11 +710,11 @@ function editDayBanner(){
   const jumpNext = `<button class="daywarn-btn" data-gotonext>➜ Switch to ${esc(fmtDateLong(nextWd))}</button>`;
   const jumpToday= `<button class="daywarn-btn ghost" data-gototoday>Go to today</button>`;
   if(curDate===todayStr()){
-    const late = new Date().getHours() >= EOD_HOUR;
+    const late = new Date().getHours() >= LOCK_HOUR;
     return `<div class="daywarn today${late?' late':''}">
       <div class="dw-main">${late?'🛑':'✏️'} You are editing <b>TODAY</b> — ${long}.</div>
       <div class="dw-sub">${late
-        ? "It's late in the shift — if you're setting up for tomorrow, switch now so you don't overwrite today's live board."
+        ? "You confirmed editing today's live board. Setting up for tomorrow? Switch instead."
         : "This is today's live board. Setting up for the next day? Switch first."}</div>
       <div class="dw-btns">${jumpNext}</div></div>`;
   }
@@ -1457,7 +1477,30 @@ function pressEditRows(){
     </div>`;
   }).join('');
 }
+/* After the lock hour, editing TODAY's live board is blocked until the user
+   explicitly confirms — so end-of-day setup doesn't accidentally change today. */
+function editLockedNow(){
+  return curDate===todayStr()
+      && new Date().getHours() >= LOCK_HOUR
+      && editTodayConfirmed !== todayStr();
+}
+function editLockGateHTML(){
+  const nextWd = shiftWorkday(todayStr(),+1);
+  return `<div class="edit-wrap"><div class="lockgate">
+    <div class="lg-icon">🔒</div>
+    <div class="lg-title">Are you sure you want to edit TODAY's Schedule?</div>
+    <div class="lg-body">It's after ${esc(fmtHour(LOCK_HOUR))} — today's board
+      (<b>${esc(fmtDateLong(todayStr()))}</b>) is live on the floor. Most changes this
+      late in the day should go on <b>tomorrow's</b> schedule instead.</div>
+    <div class="lg-btns">
+      <button class="lg-btn yes" data-confirmtoday>Yes — edit today's Schedule</button>
+      <button class="lg-btn no" data-gotonext>No — edit tomorrow's Schedule<br>
+        <span class="lg-sub">${esc(fmtDateLong(nextWd))}</span></button>
+    </div>
+  </div></div>`;
+}
 function renderEdit(){
+  if(editLockedNow()){ document.getElementById('view').innerHTML = editLockGateHTML(); return; }
   { const s=conflictNames(); CFLICT_SET=s.alert; CAUTION_SET=s.caution; }  // fields to flag red / amber
   if(!board.staff.presses.length) board.staff.presses.push(blankPressRow());  // one row to start
   const lineCards = board.lines.map((l,idx)=>{
@@ -1769,6 +1812,7 @@ document.getElementById('view').addEventListener('click', async e=>{
   else if(t.id==='addName'){ const inp=document.getElementById('newName'); if(rosterAdd(inp&&inp.value)) render(); }
   else if(t.id==='editRoster'){ mode='roster'; render(); }
   else if(t.id==='backToEdit'){ mode='edit'; render(); }
+  else if(t.dataset.confirmtoday!==undefined){ editTodayConfirmed=todayStr(); render(); }  // unlock today's editor
   else if(t.dataset.gotonext!==undefined){ goDate(shiftWorkday(todayStr(),+1)); }  // jump to tomorrow's board, stay in edit
   else if(t.dataset.gototoday!==undefined){ goDate(todayStr()); }
   else if(t.dataset.ri!==undefined){ rosterRemove(+t.dataset.ri); render(); }
