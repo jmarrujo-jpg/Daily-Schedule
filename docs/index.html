@@ -542,7 +542,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v87';
+var APP_VERSION = 'v88';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -2453,14 +2453,14 @@ setInterval(tick,1000); tick();
    To keep Cloudflare/Google-Sheet calls low, a display only checks for edits on a
    time-of-day schedule (local shop time):
      • 5:00–7:00 AM  → every 1 min  (morning setup)
-     • 7:00 AM–2:30 PM → every 15 min (light background refresh through the shift)
+     • 7:00 AM–2:30 PM → every 5 min (light background refresh through the shift)
      • 2:30 PM–5:00 AM → no automatic checks at all
    Anyone can force an instant update anytime with the ⟳ Refresh button (1 call).
    Even during an active window it only actually calls out when the tab is visible
    and this screen isn't editing, and it re-paints ONLY when the board changed. */
 const SYNC_WINDOWS = [
   { startMin: 5*60,        endMin: 7*60,          every: 60*1000  },   // 5–7 AM: 1 min
-  { startMin: 7*60,        endMin: 14*60+30,      every: 15*60*1000 }  // 7 AM–2:30 PM: 15 min
+  { startMin: 7*60,        endMin: 14*60+30,      every: 5*60*1000 }   // 7 AM–2:30 PM: 5 min
 ];
 function currentWindow(){
   const d=new Date();
