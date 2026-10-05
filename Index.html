@@ -544,7 +544,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v90';
+var APP_VERSION = 'v91';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1134,16 +1134,19 @@ function saveCatalog(){
     try{ await Store.setProducts(catalogRows()); }catch(e){ /* keep the local cache; retries on next change */ }
   }, 1500);
 }
-/* Keep each catalogued product's "Last used" date current. Whenever a board is
-   saved, bump the last-used date of any product ALREADY in the catalog that
-   appears on that board (only ever forward, to a newer date). This does NOT add
-   new products — new codes still enter the catalog only through the explicit
-   "Log product" panel — it just stops "Last used" going stale once a product
-   is in the list. */
+/* Keep each catalogued product's "Last used" date current straight from the
+   board — no scanning the (ever-growing) history of saved days. Any product
+   ALREADY in the catalog that appears on this board has its last-used date
+   bumped to the board's own date (only ever FORWARD, to a newer date). Runs
+   whenever a board is saved, loaded, or pulled in by a sync, so just having a
+   product on a day's board records that day as when it was last used. A board
+   dated in the FUTURE (tomorrow's setup prepped ahead) is skipped — a product
+   isn't "used" until that day actually arrives. New codes still enter the
+   catalog only through the explicit "Log product" panel; this never adds one. */
 function touchCatalogUse(bd){
   if(!bd || !Array.isArray(bd.lines)) return;
   const date=(bd.date||'').trim();
-  if(!date) return;
+  if(!date || date>todayStr()) return;   // real usage only — never record a future-dated board
   let changed=false;
   bd.lines.forEach(l=>{
     (l.jobs||[]).forEach(j=>{
@@ -1247,6 +1250,7 @@ async function loadBoard(date){
     board = blankBoard(date);
   }
   board.date = date;
+  if(!loadError) touchCatalogUse(board);   // viewing a day's board records its products as used that day
   lastBoardSig = boardSig(board);   // baseline: the display won't re-render until this changes
   lastSyncAt = Date.now();
   if(loadError) scheduleRecovery(); else { clearTimeout(recoverTimer); pollFailCount=0; lastPollError=null; }
@@ -2536,6 +2540,7 @@ async function pollBoard(manual){
       if(sig!==lastBoardSig){                 // something changed elsewhere — pull it in
         lastBoardSig=sig;
         board=normalizeBoard(fresh); board.date=curDate;
+        touchCatalogUse(board);               // keep last-used current from the live board
         renderBoard(); updateCoChip();
       }
     }
@@ -2661,7 +2666,7 @@ scheduleSync();
   if(TV_MODE){ mode='board'; document.body.classList.add('fs'); }   // clean board look for the display PC
   catalog = readCatalogCache().map(catalogEntry).filter(e=>e.code||e.cust||e.ends);  // instant local view
   await loadRoster(); await loadBoard(curDate); render();
-  loadCatalog();   // then refresh the shared catalog from the Google Sheet in the background
+  loadCatalog().then(()=>{ if(!loadError) touchCatalogUse(board); });   // refresh the shared catalog, then mark today's products used (catalog wasn't loaded yet during loadBoard)
 })();
 </script>
 </body>
