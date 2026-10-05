@@ -542,7 +542,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v88';
+var APP_VERSION = 'v89';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1227,6 +1227,18 @@ async function loadBoard(date){
   lastBoardSig = boardSig(board);   // baseline: the display won't re-render until this changes
   lastSyncAt = Date.now();
   if(loadError) scheduleRecovery(); else { clearTimeout(recoverTimer); pollFailCount=0; lastPollError=null; }
+}
+/* A carried-forward day lives only in memory until someone edits a field. If
+   production is genuinely unchanged from the prior work-day, nobody touches
+   anything and the day would never be saved — leaving a gap in the record and
+   making the NEXT day's carry-forward skip back past it. So the first time the
+   editor is actually shown for an unsaved day, persist the seed as that day's
+   own board. (Blank-day seeds and days we failed to load are left untouched;
+   past-day/lock gates are passed before this is reached, so they still apply.) */
+function commitSeededDay(){
+  if(daySaved || loadError || !board) return;
+  daySaved = true;     // claim it up front so repeated renders don't re-trigger
+  scheduleSave();      // writes the carried-forward board as this day's record
 }
 function scheduleSave(){
   refreshConflicts();      // keep the conflict banner live as fields change
@@ -1922,6 +1934,7 @@ function pastEditGateHTML(){
 function renderEdit(){
   if(editLockedNow()){ document.getElementById('view').innerHTML = editLockGateHTML(); return; }
   if(pastEditLockedNow()){ document.getElementById('view').innerHTML = pastEditGateHTML(); return; }
+  commitSeededDay();     // opening the editor saves a carried-forward day even if nothing is changed
   { const s=conflictNames(); CFLICT_SET=s.alert; CAUTION_SET=s.caution; }  // fields to flag red / amber
   if(!board.staff.presses.length) board.staff.presses.push(blankPressRow());  // one row to start
   const lineCards = board.lines.map((l,idx)=>{
