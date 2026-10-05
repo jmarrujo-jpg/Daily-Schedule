@@ -249,10 +249,12 @@
   .prod-table td.code{font-weight:700;color:var(--amber)}
   .prod-table td.nowrap{white-space:nowrap}
   .prod-table .dim{color:var(--edge2)}
-  .prod-table td.prod-note{min-width:220px;padding:6px 8px}
-  .prod-table .prod-noteinput{width:100%;min-width:200px;background:var(--panel2);color:var(--text);
+  .prod-table td.prod-note{width:34%;min-width:280px;padding:6px 8px;vertical-align:top}
+  .prod-table .prod-noteinput{display:block;width:100%;min-width:260px;box-sizing:border-box;
+    background:var(--panel2);color:var(--text);
     border:1px solid var(--edge2);border-radius:6px;padding:6px 8px;font-size:14px;font-family:inherit;
-    resize:vertical;min-height:34px;line-height:1.35}
+    resize:vertical;min-height:34px;line-height:1.4;overflow:hidden;
+    white-space:pre-wrap;overflow-wrap:anywhere}
   .prod-table .prod-noteinput:focus{outline:none;border-color:var(--amber)}
   .prod-table .prod-noteinput::placeholder{color:var(--edge2)}
   .prod-table .prod-rm{text-align:center}
@@ -542,7 +544,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v89';
+var APP_VERSION = 'v90';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1132,6 +1134,27 @@ function saveCatalog(){
     try{ await Store.setProducts(catalogRows()); }catch(e){ /* keep the local cache; retries on next change */ }
   }, 1500);
 }
+/* Keep each catalogued product's "Last used" date current. Whenever a board is
+   saved, bump the last-used date of any product ALREADY in the catalog that
+   appears on that board (only ever forward, to a newer date). This does NOT add
+   new products — new codes still enter the catalog only through the explicit
+   "Log product" panel — it just stops "Last used" going stale once a product
+   is in the list. */
+function touchCatalogUse(bd){
+  if(!bd || !Array.isArray(bd.lines)) return;
+  const date=(bd.date||'').trim();
+  if(!date) return;
+  let changed=false;
+  bd.lines.forEach(l=>{
+    (l.jobs||[]).forEach(j=>{
+      const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
+      if(!code) return;
+      const e=catalog.find(x=>x._key===catKeyOf(code,cust,ends));
+      if(e && (!e.lastUsed || date>e.lastUsed)){ e.lastUsed=date; changed=true; }
+    });
+  });
+  if(changed) saveCatalog();
+}
 /* Fold every product on a board into the catalog, keeping the most-recent setup
    and last-used date for each product/customer/end. Returns true if anything changed. */
 function catalogAbsorbBoard(bd){
@@ -1246,7 +1269,7 @@ function scheduleSave(){
   saving=true; saveError=null; updateSaveChip();
   clearTimeout(saveTimer);
   saveTimer=setTimeout(async()=>{
-    try{ await Store.set(keyFor(board.date), board); saveError=null; lastBoardSig=boardSig(board); lastSyncAt=Date.now(); }
+    try{ await Store.set(keyFor(board.date), board); saveError=null; lastBoardSig=boardSig(board); lastSyncAt=Date.now(); touchCatalogUse(board); }
     catch(e){ saveError = e && e.message ? e.message : 'Save failed'; }
     saving=false; updateSaveChip();
   }, 500);
@@ -1680,9 +1703,20 @@ function prodRowsHTML(){
     <td class="prod-rm"><button class="rm" data-rmprod="${esc(e._key)}" title="Remove from list">✕</button></td>
   </tr>`).join('');
 }
+/* Grow a note textarea to fit its text so every line is visible without
+   scrolling or dragging the handle. */
+function autosizeNote(el){
+  if(!el) return;
+  el.style.height='auto';
+  el.style.height=(el.scrollHeight+2)+'px';
+}
+function autosizeAllNotes(){
+  document.querySelectorAll('#prodRows .prod-noteinput').forEach(autosizeNote);
+}
 function paintProductRows(){
   const tb=document.getElementById('prodRows'); if(tb) tb.innerHTML=prodRowsHTML();
   const c=document.getElementById('prodCount'); if(c) c.textContent = filteredSortedCatalog().length + ' of ' + catalog.length + ' products';
+  autosizeAllNotes();
 }
 function sortArrow(key){ return prodSort.key===key ? (prodSort.dir<0?' ▼':' ▲') : ''; }
 function renderProducts(){
@@ -2136,6 +2170,7 @@ document.getElementById('view').addEventListener('input', e=>{
   if(t.dataset.prodnote!==undefined){                                        // Products tab notes (save, keep focus)
     const e=catalog.find(x=>x._key===t.dataset.prodnote);
     if(e){ e.notes=t.value; saveCatalog(); }
+    autosizeNote(t);                                                         // grow to fit as they type
     return;
   }
   if(mode!=='edit' && mode!=='roster') return;  // roster screen also uses this handler (role + exception-line selects)
