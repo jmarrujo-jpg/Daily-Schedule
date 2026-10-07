@@ -338,6 +338,7 @@
   .newprod-setupchg .was{color:var(--muted)}
   .newprod-setupchg .arr{color:var(--amber);font-weight:700}
   .newprod-setupchg .now{color:var(--text);font-weight:600}
+  .newprod-setupchg .newprod-savedwho{color:var(--muted);font-weight:400}
   .newprod-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
   .newprod-upd{background:var(--panel2);border:1px solid var(--amber);color:var(--amber);
     border-radius:8px;padding:8px 14px;font-weight:700;font-size:13px;white-space:nowrap;cursor:pointer}
@@ -561,7 +562,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v92';
+var APP_VERSION = 'v93';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -1053,8 +1054,26 @@ function pickSuggest(i){
 /* Products are added to the catalog only when the user explicitly asks (the
    "log as new product" panel at the bottom of the editor), never automatically —
    so half-typed / tab-away-to-verify codes never create phantom entries. */
-/* Which products on the current board aren't in the catalog yet? Returns the
-   line/job coordinates plus the details, so the panel can list them. */
+/* Products are matched to the catalog by their CODE (customer/ends can be blank
+   or vary on a line), so changing a known code's set-up is recognised as a set-up
+   change for that product — not mistaken for a brand-new product. */
+function catalogEntriesForCode(code){
+  const C=(code||'').trim().toUpperCase();
+  if(!C) return [];
+  return catalog.filter(x=>(x.code||'').trim().toUpperCase()===C);
+}
+/* The catalog entry a board job should update/compare against: same code, preferring
+   an exact customer+ends match, then the most-recently-used. */
+function bestCatalogMatchForJob(code,cust,ends){
+  const withCode=catalogEntriesForCode(code);
+  if(!withCode.length) return null;
+  const key=catKeyOf(code,cust,ends);
+  const exact=withCode.filter(x=>x._key===key);
+  return (exact.length?exact:withCode).slice()
+    .sort((a,b)=>(b.lastUsed||'').localeCompare(a.lastUsed||''))[0];
+}
+/* Which products on the current board have a code NOT in the catalog at all?
+   (A known code with a changed set-up is handled by changedSetupsOnBoard instead.) */
 function newProductsOnBoard(){
   const out=[];
   if(!board || !Array.isArray(board.lines)) return out;
@@ -1063,10 +1082,9 @@ function newProductsOnBoard(){
     (l.jobs||[]).forEach((j,ji)=>{
       const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
       if(!code) return;                                   // need at least a product code
-      const key=catKeyOf(code,cust,ends);
-      if(catalog.some(x=>x._key===key)) return;           // already catalogued
-      if(out.some(o=>o.key===key)) return;                // de-dupe repeats on the same board
-      out.push({ li, ji, key, code, cust, ends, size,
+      if(catalogEntriesForCode(code).length) return;      // code already known → not "new"
+      if(out.some(o=>o.code.toUpperCase()===code.toUpperCase())) return;   // de-dupe repeats on the same board
+      out.push({ li, ji, code, cust, ends, size,
                  pallet:sortPallet(Array.isArray(j.pallet)?j.pallet:[]), stripe:stripeArr(j.stripe) });
     });
   });
@@ -1099,8 +1117,8 @@ function usedDateFor(){
   const d=(board&&board.date||'').trim();
   return (d && d<=todayStr()) ? d : todayStr();
 }
-/* Products on the board whose code/customer/ends ARE catalogued, but whose set-up
-   on the board differs from every saved variant — i.e. the set-up changed. Each
+/* Products on the board whose CODE is catalogued, but whose set-up on the board
+   differs from every saved set-up for that code — i.e. the set-up changed. Each
    gets a choice in the panel: update the saved set-up, or keep both (save this as
    a new variant, with optional run notes). Jobs with no set-up entered yet are
    skipped so a half-filled line never nags. */
@@ -1112,31 +1130,29 @@ function changedSetupsOnBoard(){
     (l.jobs||[]).forEach((j,ji)=>{
       const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
       if(!code) return;
-      const key=catKeyOf(code,cust,ends);
-      const variants=catalog.filter(x=>x._key===key);
-      if(!variants.length) return;                                   // not catalogued → it's a "new product"
+      const withCode=catalogEntriesForCode(code);
+      if(!withCode.length) return;                                   // code not catalogued → it's a "new product"
       const pallet=sortPallet(Array.isArray(j.pallet)?j.pallet:[]), stripe=stripeArr(j.stripe);
       const setup=setupString(pallet,stripe);
       if(!setup) return;                                             // nothing entered yet → don't nag
-      if(variants.some(v=>setupString(v.pallet,v.stripe)===setup)) return;   // this set-up already saved
-      if(out.some(o=>o.key===key && setupString(o.pallet,o.stripe)===setup)) return;  // de-dupe board repeats
-      const ex=variants.slice().sort((a,b)=>(b.lastUsed||'').localeCompare(a.lastUsed||''))[0];
-      out.push({ li, ji, key, code, cust, ends, size, pallet, stripe,
-                 savedSetup:setupString(ex.pallet,ex.stripe) });
+      if(withCode.some(v=>setupString(v.pallet,v.stripe)===setup)) return;   // this set-up already saved for the code
+      if(out.some(o=>o.code.toUpperCase()===code.toUpperCase() && setupString(o.pallet,o.stripe)===setup)) return; // de-dupe
+      const ex=bestCatalogMatchForJob(code,cust,ends);
+      out.push({ li, ji, code, cust, ends, size, pallet, stripe,
+                 savedSetup:setupString(ex.pallet,ex.stripe), savedCust:ex.cust, savedEnds:ex.ends });
     });
   });
   return out;
 }
-/* Overwrite the saved set-up of a catalogued product with what's on the board.
-   Updates the most-recently-used variant for that product. Returns true if done. */
+/* Overwrite the saved set-up for this product CODE with what's on the board
+   (set-up + size only — the matched entry's customer/ends are left as they were).
+   Returns true if done. */
 function updateCatalogSetup(li,ji){
   const l=board&&board.lines&&board.lines[li], j=l&&l.jobs&&l.jobs[ji];
   if(!j) return false;
   const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
-  const key=catKeyOf(code,cust,ends);
-  const matches=catalog.filter(x=>x._key===key);
-  if(!matches.length) return false;
-  const e=matches.slice().sort((a,b)=>(b.lastUsed||'').localeCompare(a.lastUsed||''))[0];
+  const e=bestCatalogMatchForJob(code,cust,ends);
+  if(!e) return false;
   e.pallet=sortPallet(Array.isArray(j.pallet)?j.pallet:[]);
   e.stripe=stripeArr(j.stripe);
   if((l.size||'').trim()) e.size=(l.size||'').trim();
@@ -1200,6 +1216,10 @@ function newProductsPanelHTML(){
     const rows=chg.map(p=>{
       const bits=[esc(p.cust||'—'), esc(p.ends||'')].filter(Boolean).join(' · ');
       const saved=esc(p.savedSetup||'(none)'), now=esc(setupString(p.pallet,p.stripe)||'(none)');
+      // If the saved entry is under a different customer/ends, name it so it's clear what "Update" changes.
+      const savedBits=[p.savedCust||'', p.savedEnds||''].filter(Boolean).join(' · ');
+      const savedWho=(savedBits && savedBits.toUpperCase()!==[p.cust||'',p.ends||''].filter(Boolean).join(' · ').toUpperCase())
+        ? ` <span class="newprod-savedwho">(${esc(savedBits)})</span>` : '';
       const entering=(_varNotesKey===p.li+':'+p.ji);
       const actions = entering
         ? `<div class="newprod-noteentry">
@@ -1213,7 +1233,7 @@ function newProductsPanelHTML(){
         <div class="newprod-info">
           <span class="newprod-code">${esc(p.code)}</span>
           <span class="newprod-meta">${bits}</span>
-          <span class="newprod-setupchg"><span class="was">saved: ${saved}</span><span class="arr">→</span><span class="now">now: ${now}</span></span>
+          <span class="newprod-setupchg"><span class="was">saved: ${saved}${savedWho}</span><span class="arr">→</span><span class="now">now: ${now}</span></span>
         </div>
         <div class="newprod-actions">${actions}</div>
       </div>`;
