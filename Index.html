@@ -332,6 +332,23 @@
     border-radius:8px;padding:8px 14px;font-weight:700;font-size:13px;white-space:nowrap;cursor:pointer}
   .newprod-add:hover,.newprod-addall:hover{background:var(--green);color:#05210f}
   .newprod-addall{margin-left:auto}
+  /* "Set-up changed" panel: amber accent to tell it apart from the green "new product" one */
+  .newprod-panel.changed{border-left-color:var(--amber)}
+  .newprod-setupchg{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12.5px;margin-top:2px}
+  .newprod-setupchg .was{color:var(--muted)}
+  .newprod-setupchg .arr{color:var(--amber);font-weight:700}
+  .newprod-setupchg .now{color:var(--text);font-weight:600}
+  .newprod-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .newprod-upd{background:var(--panel2);border:1px solid var(--amber);color:var(--amber);
+    border-radius:8px;padding:8px 14px;font-weight:700;font-size:13px;white-space:nowrap;cursor:pointer}
+  .newprod-upd:hover{background:var(--amber);color:#2a1c00}
+  .newprod-noteentry{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .newprod-noteinput{background:var(--panel2);color:var(--text);border:1px solid var(--edge2);
+    border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;min-width:200px}
+  .newprod-noteinput:focus{outline:none;border-color:var(--amber)}
+  .newprod-cancel{background:transparent;border:1px solid var(--edge2);color:var(--muted);
+    border-radius:8px;padding:8px 12px;font-weight:600;font-size:13px;white-space:nowrap;cursor:pointer}
+  .newprod-cancel:hover{color:var(--text);border-color:var(--muted)}
   .savechip{font-size:13px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
   .savechip .dot{width:9px;height:9px;border-radius:50%;background:var(--green)}
   .savechip.saving .dot{background:var(--amber)}
@@ -544,7 +561,7 @@ try{ var _bl=document.querySelector('.brand-logo'); if(_bl) _bl.src=LOGO_SRC; }c
 
 /* Bump on every page change — shows bottom-right so you can confirm a reload
    actually picked up the latest page (a stale cached page shows an older tag). */
-var APP_VERSION = 'v91';
+var APP_VERSION = 'v92';
 
 /* Call a backend function: callApi('fn',[args]) -> Promise(result). */
 async function callApi(fn, args){
@@ -956,6 +973,10 @@ function catKeyOf(code,cust,ends){ return ((code||'')+'\u0001'+(cust||'')+'\u000
 function setupString(pallet,stripe){
   return sortPallet(pallet).concat(stripeArr(stripe)).join(' · ');
 }
+/* A catalog entry's full identity: product (code/cust/ends) PLUS its set-up.
+   The catalog may hold more than one set-up for the same product (variants), so
+   this — not _key alone — is what dedupes rows and tells variants apart. */
+function vkeyOf(e){ return (e&&e._key||'') + '\u0001' + setupString(e&&e.pallet, e&&e.stripe).toUpperCase(); }
 /* Split a "2 Straps · Cover Caps · I/S" string back into pallet + stripe arrays. */
 function parseSetup(str){
   const pallet=[], stripe=[];
@@ -1058,10 +1079,11 @@ function addProductToCatalog(li,ji){
   const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
   if(!code) return false;
   const key=catKeyOf(code,cust,ends);
-  if(catalog.some(x=>x._key===key)) return false;         // already there
-  catalog.push({ _key:key, code, cust, ends, size:(l.size||'').trim(),
-                 pallet:sortPallet(Array.isArray(j.pallet)?j.pallet:[]), stripe:stripeArr(j.stripe),
-                 lastUsed:(board.date||todayStr()), notes:'' });
+  const pallet=sortPallet(Array.isArray(j.pallet)?j.pallet:[]), stripe=stripeArr(j.stripe);
+  const vk=key+'\u0001'+setupString(pallet,stripe).toUpperCase();
+  if(catalog.some(x=>vkeyOf(x)===vk)) return false;       // this exact product+set-up is already there
+  catalog.push({ _key:key, code, cust, ends, size:(l.size||'').trim(), pallet, stripe,
+                 lastUsed:usedDateFor(), notes:'' });
   saveCatalog();
   return true;
 }
@@ -1071,30 +1093,141 @@ function addAllNewProducts(){
   newProductsOnBoard().forEach(p=>{ if(addProductToCatalog(p.li,p.ji)) n++; });
   return n;
 }
-/* The "would you like to log these as new products?" panel for the editor. */
+/* The date to stamp as "last used" when logging/updating from the current board:
+   the board's own date, but never a future-dated board (prepped ahead). */
+function usedDateFor(){
+  const d=(board&&board.date||'').trim();
+  return (d && d<=todayStr()) ? d : todayStr();
+}
+/* Products on the board whose code/customer/ends ARE catalogued, but whose set-up
+   on the board differs from every saved variant — i.e. the set-up changed. Each
+   gets a choice in the panel: update the saved set-up, or keep both (save this as
+   a new variant, with optional run notes). Jobs with no set-up entered yet are
+   skipped so a half-filled line never nags. */
+function changedSetupsOnBoard(){
+  const out=[];
+  if(!board || !Array.isArray(board.lines)) return out;
+  (board.lines||[]).forEach((l,li)=>{
+    const size=(l.size||'').trim();
+    (l.jobs||[]).forEach((j,ji)=>{
+      const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
+      if(!code) return;
+      const key=catKeyOf(code,cust,ends);
+      const variants=catalog.filter(x=>x._key===key);
+      if(!variants.length) return;                                   // not catalogued → it's a "new product"
+      const pallet=sortPallet(Array.isArray(j.pallet)?j.pallet:[]), stripe=stripeArr(j.stripe);
+      const setup=setupString(pallet,stripe);
+      if(!setup) return;                                             // nothing entered yet → don't nag
+      if(variants.some(v=>setupString(v.pallet,v.stripe)===setup)) return;   // this set-up already saved
+      if(out.some(o=>o.key===key && setupString(o.pallet,o.stripe)===setup)) return;  // de-dupe board repeats
+      const ex=variants.slice().sort((a,b)=>(b.lastUsed||'').localeCompare(a.lastUsed||''))[0];
+      out.push({ li, ji, key, code, cust, ends, size, pallet, stripe,
+                 savedSetup:setupString(ex.pallet,ex.stripe) });
+    });
+  });
+  return out;
+}
+/* Overwrite the saved set-up of a catalogued product with what's on the board.
+   Updates the most-recently-used variant for that product. Returns true if done. */
+function updateCatalogSetup(li,ji){
+  const l=board&&board.lines&&board.lines[li], j=l&&l.jobs&&l.jobs[ji];
+  if(!j) return false;
+  const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
+  const key=catKeyOf(code,cust,ends);
+  const matches=catalog.filter(x=>x._key===key);
+  if(!matches.length) return false;
+  const e=matches.slice().sort((a,b)=>(b.lastUsed||'').localeCompare(a.lastUsed||''))[0];
+  e.pallet=sortPallet(Array.isArray(j.pallet)?j.pallet:[]);
+  e.stripe=stripeArr(j.stripe);
+  if((l.size||'').trim()) e.size=(l.size||'').trim();
+  e.lastUsed=usedDateFor();
+  saveCatalog();
+  return true;
+}
+/* Save the board's set-up as a NEW variant of a catalogued product (keeping the
+   old one), with optional notes for this run. Returns true if added. */
+function createCatalogVariant(li,ji,notes){
+  const l=board&&board.lines&&board.lines[li], j=l&&l.jobs&&l.jobs[ji];
+  if(!j) return false;
+  const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
+  if(!code) return false;
+  const key=catKeyOf(code,cust,ends);
+  const pallet=sortPallet(Array.isArray(j.pallet)?j.pallet:[]), stripe=stripeArr(j.stripe);
+  const vk=key+'\u0001'+setupString(pallet,stripe).toUpperCase();
+  if(catalog.some(x=>vkeyOf(x)===vk)) return false;       // identical variant already exists
+  catalog.push({ _key:key, code, cust, ends, size:(l.size||'').trim(), pallet, stripe,
+                 lastUsed:usedDateFor(), notes:String(notes||'').trim() });
+  saveCatalog();
+  return true;
+}
+/* Which "setup changed" row (if any) is currently entering run-notes, as "li:ji",
+   plus the text typed so far — kept across panel refreshes so focus/typing survive. */
+let _varNotesKey=null, _varNotesText='';
+/* The editor's bottom panel: brand-new products to log, and catalogued products
+   whose set-up changed (update the saved one, or keep both as a new variant). */
 function newProductsPanelHTML(){
-  const list=newProductsOnBoard();
-  if(!list.length) return '<div id="newProdBox"></div>';
-  const rows=list.map(p=>{
-    const bits=[esc(p.cust||'—'), esc(p.ends||'')].filter(Boolean).join(' · ');
-    const setup=esc(setupString(p.pallet,p.stripe));
-    return `<div class="newprod-row">
-      <div class="newprod-info">
-        <span class="newprod-code">${esc(p.code)}</span>
-        <span class="newprod-meta">${bits}${setup?` · ${setup}`:''}</span>
+  const neu=newProductsOnBoard();
+  const chg=changedSetupsOnBoard();
+  if(!neu.length && !chg.length){ _varNotesKey=null; return '<div id="newProdBox"></div>'; }
+
+  let html='<div id="newProdBox">';
+
+  if(neu.length){
+    const many=neu.length>1;
+    const rows=neu.map(p=>{
+      const bits=[esc(p.cust||'—'), esc(p.ends||'')].filter(Boolean).join(' · ');
+      const setup=esc(setupString(p.pallet,p.stripe));
+      return `<div class="newprod-row">
+        <div class="newprod-info">
+          <span class="newprod-code">${esc(p.code)}</span>
+          <span class="newprod-meta">${bits}${setup?` · ${setup}`:''}</span>
+        </div>
+        <button class="newprod-add" data-addprod-li="${p.li}" data-addprod-ji="${p.ji}">＋ Log product</button>
+      </div>`;
+    }).join('');
+    html+=`<div class="newprod-panel">
+      <div class="newprod-head">
+        <span class="newprod-title">Would you like to log ${many?`these ${neu.length} products`:'this product'} to the catalog?</span>
+        ${many?`<button class="newprod-addall" id="addAllProd">＋ Log all ${neu.length}</button>`:''}
       </div>
-      <button class="newprod-add" data-addprod-li="${p.li}" data-addprod-ji="${p.ji}">＋ Log product</button>
+      <div class="newprod-hint">New product code${many?'s':''} not in your Product Catalog yet. Nothing is saved until you tap.</div>
+      ${rows}
     </div>`;
-  }).join('');
-  const many=list.length>1;
-  return `<div id="newProdBox"><div class="newprod-panel">
-    <div class="newprod-head">
-      <span class="newprod-title">Would you like to log ${many?`these ${list.length} products`:'this product'} to the catalog?</span>
-      ${many?`<button class="newprod-addall" id="addAllProd">＋ Log all ${list.length}</button>`:''}
-    </div>
-    <div class="newprod-hint">New product code${many?'s':''} not in your Product Catalog yet. Nothing is saved until you tap.</div>
-    ${rows}
-  </div></div>`;
+  }
+
+  if(chg.length){
+    const many=chg.length>1;
+    const rows=chg.map(p=>{
+      const bits=[esc(p.cust||'—'), esc(p.ends||'')].filter(Boolean).join(' · ');
+      const saved=esc(p.savedSetup||'(none)'), now=esc(setupString(p.pallet,p.stripe)||'(none)');
+      const entering=(_varNotesKey===p.li+':'+p.ji);
+      const actions = entering
+        ? `<div class="newprod-noteentry">
+             <input class="newprod-noteinput" data-varnote="${p.li}:${p.ji}" placeholder="Notes for this run (optional)" value="${esc(_varNotesText)}">
+             <button class="newprod-add" data-savevar-li="${p.li}" data-savevar-ji="${p.ji}">Save new variant</button>
+             <button class="newprod-cancel" data-cancelvar="1">Cancel</button>
+           </div>`
+        : `<button class="newprod-upd" data-updprod-li="${p.li}" data-updprod-ji="${p.ji}">↻ Update saved set-up</button>
+           <button class="newprod-add" data-newvar-li="${p.li}" data-newvar-ji="${p.ji}">＋ Save as new variant</button>`;
+      return `<div class="newprod-row changed">
+        <div class="newprod-info">
+          <span class="newprod-code">${esc(p.code)}</span>
+          <span class="newprod-meta">${bits}</span>
+          <span class="newprod-setupchg"><span class="was">saved: ${saved}</span><span class="arr">→</span><span class="now">now: ${now}</span></span>
+        </div>
+        <div class="newprod-actions">${actions}</div>
+      </div>`;
+    }).join('');
+    html+=`<div class="newprod-panel changed">
+      <div class="newprod-head">
+        <span class="newprod-title">The set-up changed for ${many?`these ${chg.length} catalogued products`:'this catalogued product'}.</span>
+      </div>
+      <div class="newprod-hint">Update the saved set-up, or keep both by saving this as a new variant (with optional run notes). Nothing changes until you tap.</div>
+      ${rows}
+    </div>`;
+  }
+
+  return html+'</div>';
 }
 /* Refresh just the new-products panel (used after a field blur, without a full
    re-render that would steal focus from the next field). */
@@ -1118,8 +1251,9 @@ async function loadCatalog(){
   const map=new Map();
   rows.map(catalogEntry).forEach(e=>{
     if(!e.code && !e.cust && !e.ends) return;
-    const ex=map.get(e._key);
-    if(!ex || (e.lastUsed||'') >= (ex.lastUsed||'')) map.set(e._key,e);
+    const vk=vkeyOf(e);                           // keep distinct set-ups (variants); collapse identical rows
+    const ex=map.get(vk);
+    if(!ex || (e.lastUsed||'') >= (ex.lastUsed||'')) map.set(vk,e);
   });
   catalog=[...map.values()];
   cacheCatalogLocal();
@@ -1152,14 +1286,24 @@ function touchCatalogUse(bd){
     (l.jobs||[]).forEach(j=>{
       const code=(j.code||'').trim(), cust=(j.cust||'').trim(), ends=(j.ends||'').trim();
       if(!code) return;
-      const e=catalog.find(x=>x._key===catKeyOf(code,cust,ends));
-      if(e && (!e.lastUsed || date>e.lastUsed)){ e.lastUsed=date; changed=true; }
+      const key=catKeyOf(code,cust,ends);
+      const variants=catalog.filter(x=>x._key===key);
+      if(!variants.length) return;
+      // Bump the variant whose set-up matches the board; if none matches exactly,
+      // bump every variant of this product (it ran that day — keep the family fresh).
+      const setup=setupString(sortPallet(Array.isArray(j.pallet)?j.pallet:[]), stripeArr(j.stripe));
+      const exact=variants.filter(x=>setupString(x.pallet,x.stripe)===setup);
+      (exact.length?exact:variants).forEach(e=>{
+        if(!e.lastUsed || date>e.lastUsed){ e.lastUsed=date; changed=true; }
+      });
     });
   });
   if(changed) saveCatalog();
 }
-/* Fold every product on a board into the catalog, keeping the most-recent setup
-   and last-used date for each product/customer/end. Returns true if anything changed. */
+/* Fold every product on a board into the catalog. Each distinct product+set-up is
+   its own variant: an exact match just advances its last-used date, a set-up not
+   seen before is added as a new variant (so a scan never overwrites one variant's
+   set-up with another's). Returns true if anything changed. */
 function catalogAbsorbBoard(bd){
   if(!bd || !Array.isArray(bd.lines)) return false;
   const date = bd.date || '';
@@ -1172,14 +1316,15 @@ function catalogAbsorbBoard(bd){
       const key=catKeyOf(code,cust,ends);
       const pallet=sortPallet(Array.isArray(j.pallet)?j.pallet:[]);
       const stripe=stripeArr(j.stripe);
-      let e=catalog.find(x=>x._key===key);
+      const vk=key+'\u0001'+setupString(pallet,stripe).toUpperCase();
+      let e=catalog.find(x=>vkeyOf(x)===vk);
       if(!e){
         catalog.push({_key:key, code, cust, ends, size, pallet, stripe, lastUsed:date, notes:''});
         changed=true;
-      }else if(!e.lastUsed || (date && date>=e.lastUsed)){  // this board is same-day or newer → refresh setup + date
-        e.code=code; e.cust=cust; e.ends=ends; e.size=size; e.pallet=pallet; e.stripe=stripe;
-        if(date && date!==e.lastUsed){ e.lastUsed=date; changed=true; }
-        else changed=true;
+      }else if(!e.lastUsed || (date && date>e.lastUsed)){  // newer appearance of this exact set-up → advance the date
+        if((code||cust||ends)) { e.code=code; e.cust=cust; e.ends=ends; }
+        if(size) e.size=size;
+        e.lastUsed=date; changed=true;
       }
     });
   });
@@ -1703,8 +1848,8 @@ function prodRowsHTML(){
     <td class="mono">${esc(e.ends)||dash}</td>
     <td>${esc(setupString(e.pallet,e.stripe))||dash}</td>
     <td class="nowrap">${e.lastUsed?esc(fmtDateShort(e.lastUsed)):dash}</td>
-    <td class="prod-note"><textarea class="prod-noteinput" data-prodnote="${esc(e._key)}" rows="1" placeholder="setup, steel, notes…">${esc(e.notes||'')}</textarea></td>
-    <td class="prod-rm"><button class="rm" data-rmprod="${esc(e._key)}" title="Remove from list">✕</button></td>
+    <td class="prod-note"><textarea class="prod-noteinput" data-prodnote="${esc(vkeyOf(e))}" rows="1" placeholder="setup, steel, notes…">${esc(e.notes||'')}</textarea></td>
+    <td class="prod-rm"><button class="rm" data-rmprod="${esc(vkeyOf(e))}" title="Remove from list">✕</button></td>
   </tr>`).join('');
 }
 /* Grow a note textarea to fit its text so every line is visible without
@@ -2172,11 +2317,12 @@ document.getElementById('view').addEventListener('input', e=>{
   const t=e.target;
   if(t.id==='prodSearch'){ prodQuery=t.value; paintProductRows(); return; }  // Products tab search
   if(t.dataset.prodnote!==undefined){                                        // Products tab notes (save, keep focus)
-    const e=catalog.find(x=>x._key===t.dataset.prodnote);
+    const e=catalog.find(x=>vkeyOf(x)===t.dataset.prodnote);
     if(e){ e.notes=t.value; saveCatalog(); }
     autosizeNote(t);                                                         // grow to fit as they type
     return;
   }
+  if(t.dataset.varnote!==undefined){ _varNotesText=t.value; return; }        // run-notes for a new variant (remember across refreshes)
   if(mode!=='edit' && mode!=='roster') return;  // roster screen also uses this handler (role + exception-line selects)
   const li = t.getAttribute('data-line');
   if(li!==null){
@@ -2323,7 +2469,7 @@ document.getElementById('view').addEventListener('click', async e=>{
     if(prodSort.key===k) prodSort.dir*=-1; else prodSort={key:k, dir:(k==='lastUsed'?-1:1)};
     renderProducts(); return; }
   if(t.dataset.rmprod!==undefined){
-    const i=catalog.findIndex(x=>x._key===t.dataset.rmprod);
+    const i=catalog.findIndex(x=>vkeyOf(x)===t.dataset.rmprod);
     if(i>=0){ catalog.splice(i,1); saveCatalog(); paintProductRows(); } return; }
   if(t.id==='prodExport'){ exportCatalogCSV(); return; }
   if(t.id==='prodRebuild'){
@@ -2338,6 +2484,23 @@ document.getElementById('view').addEventListener('click', async e=>{
     return;
   }
   if(t.id==='addAllProd'){ if(addAllNewProducts()) refreshNewProdPanel(); return; }  // log all new products
+  if(t.dataset.updprodLi!==undefined){                          // set-up changed → overwrite the saved set-up
+    if(updateCatalogSetup(+t.dataset.updprodLi, +t.dataset.updprodJi)){ _varNotesKey=null; _varNotesText=''; refreshNewProdPanel(); }
+    return;
+  }
+  if(t.dataset.newvarLi!==undefined){                           // set-up changed → start entering run-notes for a new variant
+    _varNotesKey=t.dataset.newvarLi+':'+t.dataset.newvarJi; _varNotesText='';
+    refreshNewProdPanel();
+    const inp=document.querySelector('#newProdBox .newprod-noteinput'); if(inp){ inp.focus(); }
+    return;
+  }
+  if(t.dataset.savevarLi!==undefined){                          // confirm: save the board's set-up as a new variant
+    const inp=document.querySelector('#newProdBox .newprod-noteinput');
+    const notes=inp?inp.value:_varNotesText;
+    if(createCatalogVariant(+t.dataset.savevarLi, +t.dataset.savevarJi, notes)){ _varNotesKey=null; _varNotesText=''; refreshNewProdPanel(); }
+    return;
+  }
+  if(t.dataset.cancelvar!==undefined){ _varNotesKey=null; _varNotesText=''; refreshNewProdPanel(); return; }
   if(t.id==='addLine'){ board.lines.push(blankLine("")); scheduleSave(); render(); }
   else if(t.id==='addPressRow'){ board.staff.presses.push(blankPressRow()); scheduleSave(); render(); }
   else if(t.id==='addName'){ const inp=document.getElementById('newName'); if(rosterAdd(inp&&inp.value)) render(); }
