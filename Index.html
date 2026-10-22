@@ -767,7 +767,7 @@ let board = null;
 let roster = [];   // list of people's names — fills the position / absent / vacation dropdowns
 let catalog = [];  // compiled product reference: each product/customer/end seen, its setup + last-used date
 let prodQuery = '';                       // Products tab search text
-let prodSort = { key:'code', dir:1 };     // Products tab sort column + direction (default: Product, smallest→largest)
+let prodSort = { key:'size', dir:1 };     // Products tab sort column + direction (default: Size, smallest→largest)
 let saveTimer = null, saving = false, saveError = null, loadError = null;
 let recoverTimer = null;   // retry handle for auto-recovering from a failed load
 let daySaved = false;      // true when the day being viewed exists as a saved board (for slip lookup)
@@ -1844,7 +1844,11 @@ function filteredSortedCatalog(){
   rows.sort((a,b)=>{
     let av = key==='setup' ? setupString(a.pallet,a.stripe) : (a[key]||'');
     let bv = key==='setup' ? setupString(b.pallet,b.stripe) : (b[key]||'');
-    // Natural/numeric compare so 41X411 sorts before 211X413 (smallest → largest),
+    // Blank sort values always sink to the bottom, regardless of direction, so
+    // products missing a size (or whatever column is sorted) don't crowd the top.
+    const aEmpty = String(av).trim()==='', bEmpty = String(bv).trim()==='';
+    if(aEmpty !== bEmpty) return aEmpty ? 1 : -1;
+    // Natural/numeric compare so 211x413 sorts before 307x409 (smallest → largest),
     // not lexically. Ties break by customer so duplicates line up together.
     const primary = natCmp(av,bv)*dir;
     return primary || natCmp(a.cust||'', b.cust||'');
