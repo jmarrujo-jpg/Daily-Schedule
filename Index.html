@@ -707,8 +707,10 @@ const DEFAULT_LINE_ORDER = ["6","5","4","2"];
    The Press Department is its own thing: one operator dropdown per press unit. */
 const STAFF_PEOPLE = [["absent","Absent","pab"], ["vacation","Vacation","pvac"], ["custodian","Custodian","pcust"]];
 const STAFF_TEXT   = [];
-/* Press / Litho units — each gets its own operator dropdown (roster names, up to MAX_PER_POS). */
-const PRESS_UNITS = ["13","15","16","17","18","19","20","2","3","1-SS","2-SS","3-SS"];
+/* Press / Litho units — each gets its own operator dropdown (roster names, up to MAX_PER_POS).
+   Ordered smallest → largest: the numbered presses ascending, then the -SS presses
+   (their own group) ascending. */
+const PRESS_UNITS = ["2","3","13","14","15","16","17","18","19","20","1-SS","2-SS","3-SS"];
 /* Pallet set-up options, in the order they should always display:
    straps → cover caps → frame → pallet type. Wood pallet is the implied
    default (95% of jobs), so only the plastic exception is listed. */
