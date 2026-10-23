@@ -709,8 +709,12 @@ const STAFF_PEOPLE = [["absent","Absent","pab"], ["vacation","Vacation","pvac"],
 const STAFF_TEXT   = [];
 /* Press / Litho units — each gets its own operator dropdown (roster names, up to MAX_PER_POS).
    Ordered smallest → largest: the numbered presses ascending, then the -SS presses
-   (their own group) ascending. */
-const PRESS_UNITS = ["2","3","13","14","15","16","17","18","19","20","1-SS","2-SS","3-SS"];
+   (their own group) ascending, then named units (e.g. A Liner). */
+const PRESS_UNITS = ["2","3","13","14","15","16","17","18","19","20","1-SS","2-SS","3-SS","A Liner"];
+/* Label for a press unit: numbered units read "Press 14"; named units (anything
+   not starting with a digit, like "A Liner") show as-is so they don't become
+   "Press A Liner". */
+function pressLabel(u){ u=String(u||''); return /^[0-9]/.test(u) ? 'Press '+u : u; }
 /* Pallet set-up options, in the order they should always display:
    straps → cover caps → frame → pallet type. Wood pallet is the implied
    default (95% of jobs), so only the plastic exception is listed. */
@@ -1512,7 +1516,7 @@ function collectConflicts(){
     OP_ROLES.forEach(([key,label])=> opArr(l,key).forEach(n=> add(n,'Line '+(l.lineNo||'?')+' · '+label,'work',st)));
   });
   (board.staff.presses||[]).forEach(row=>
-    (row.ops||[]).forEach(n=> add(n,'Press '+(row.u||'?'),'work')));
+    (row.ops||[]).forEach(n=> add(n,(pressLabel(row.u)||'Press ?'),'work')));
   (board.staff.custodian||[]).forEach(n=> add(n,'Custodian','work'));
   (board.staff.absent||[]).forEach(n=> add(n,'Absent','absent'));
   (board.staff.vacation||[]).forEach(n=> add(n,'Vacation','vacation'));
@@ -2021,7 +2025,7 @@ function renderBoard(){
     if(row.mode) bits.push(esc(row.mode));
     if(row.qty)  bits.push(esc(row.qty));
     const detail = bits.length ? `<span class="press-detail">${bits.join(' · ')}</span>` : '';
-    return `<li><div class="press-top"><span class="press-no">Press ${esc(row.u)}</span>
+    return `<li><div class="press-top"><span class="press-no">${esc(pressLabel(row.u))}</span>
       <span class="press-op">${names.map(esc).join(', ')}</span></div>${detail}</li>`;
   }).filter(Boolean).join('');
   const railPresses = `<div class="panel ppress"><h3>Press Department</h3>
@@ -2079,8 +2083,8 @@ function pressUnitOptions(cur){
   let opts=`<option value="">— press —</option>`;
   let matched=false;
   PRESS_UNITS.forEach(u=>{ const sel=(u===cur); if(sel)matched=true;
-    opts+=`<option value="${esc(u)}" ${sel?'selected':''}>Press ${esc(u)}</option>`; });
-  if(cur && !matched) opts+=`<option value="${esc(cur)}" selected>Press ${esc(cur)}</option>`;
+    opts+=`<option value="${esc(u)}" ${sel?'selected':''}>${esc(pressLabel(u))}</option>`; });
+  if(cur && !matched) opts+=`<option value="${esc(cur)}" selected>${esc(pressLabel(cur))}</option>`;
   return opts;
 }
 function pressEditRows(){
