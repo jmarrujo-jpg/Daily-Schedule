@@ -6,7 +6,10 @@
  *
  * Two tabs are used (auto-created on first run if missing):
  *   Roster  — the people, one per row. Columns:
- *               A Name | B Primary Role | C Secondary Role | D Tertiary Role | E Exceptions
+ *               A Name | B Primary Role | C Secondary Role | D Tertiary Role | E Exceptions | F All Skills
+ *             All Skills (F) is the full RANKED list, e.g. "Bodymaker, Double Seamer,
+ *             Palletizer, Forklift" — the app reads this first; B/C/D mirror its top three
+ *             so the sheet stays legible and older 5-column sheets still load from them.
  *             Exceptions is one readable string, e.g.
  *               "All lines: Palletizer ; Line 6: Double Seamer, Palletizer"
  *             Edit it in the sheet and the app picks the names/roles up.
@@ -23,7 +26,7 @@
  *   API_TOKEN           (secret)  optional shared token; if set, the client must send it
  *
  * Contract (POST {fn, args}):
- *   getRoster()          -> [{name, primary, secondary, tertiary, exceptions:[{line,pos}]}, ...]
+ *   getRoster()          -> [{name, primary, secondary, tertiary, exceptions, skills}, ...]  (raw strings; app parses)
  *   setRoster([people])  -> true
  *   getBoard(key)        -> board JSON | null      (key is "board:YYYY-MM-DD" or the date)
  *   setBoard(key, board) -> true
@@ -125,12 +128,15 @@ async function handle(fn, args, env) {
 }
 
 // ---------------- backend functions ----------------
-// Roster columns: Name | Primary Role | Secondary Role | Tertiary Role | Exceptions
+// Roster columns: Name | Primary Role | Secondary Role | Tertiary Role | Exceptions | All Skills
 // Exceptions is one readable string, e.g. "All lines: Palletizer ; Line 6: Double Seamer".
-const ROSTER_HEADER = ['Name', 'Primary Role', 'Secondary Role', 'Tertiary Role', 'Exceptions'];
+// All Skills (col F) is the full ranked list, e.g. "Bodymaker, Double Seamer, Palletizer,
+// Forklift" — the source of truth on load. Columns B/C/D mirror its top three so the
+// sheet stays legible and older (5-column) sheets still load from them.
+const ROSTER_HEADER = ['Name', 'Primary Role', 'Secondary Role', 'Tertiary Role', 'Exceptions', 'All Skills'];
 
 async function getRoster(sheets) {
-  const rows = await sheets.values(ROSTER_TAB + '!A2:E100000');
+  const rows = await sheets.values(ROSTER_TAB + '!A2:F100000');
   const out = [];
   for (const r of rows) {
     const name = String((r && r[0]) || '').trim();
@@ -141,6 +147,7 @@ async function getRoster(sheets) {
       secondary: String(r[2] || '').trim(),
       tertiary: String(r[3] || '').trim(),
       exceptions: String(r[4] || '').trim(),   // raw text; the app parses it
+      skills: String(r[5] || '').trim(),       // ranked list; the app parses it (falls back to B/C/D)
     });
   }
   return out;
@@ -155,6 +162,7 @@ async function setRoster(sheets, list) {
       name,
       String(o.primary || '').trim(), String(o.secondary || '').trim(), String(o.tertiary || '').trim(),
       String(o.exceptions == null ? '' : o.exceptions).trim(),
+      String(o.skills == null ? '' : o.skills).trim(),
     ];
   }).filter(Boolean).slice(0, 2000);
   // Keep the sheet self-describing.
@@ -162,7 +170,7 @@ async function setRoster(sheets, list) {
   // Write the data FIRST, then clear only the rows BELOW it. The old code cleared
   // before writing, so a mid-write failure wiped the whole roster.
   if (rows.length) await sheets.update(ROSTER_TAB + '!A2', rows);
-  await sheets.clear(ROSTER_TAB + '!A' + (rows.length + 2) + ':E100000');
+  await sheets.clear(ROSTER_TAB + '!A' + (rows.length + 2) + ':F100000');
   return true;
 }
 

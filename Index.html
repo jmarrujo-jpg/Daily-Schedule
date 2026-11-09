@@ -405,12 +405,29 @@
     border-radius:6px;padding:5px 5px 5px 12px;font-family:var(--disp);font-weight:600;font-size:16px}
   .chip button{background:transparent;border:none;color:var(--dim);font-size:18px;line-height:.9;padding:0 5px;cursor:pointer}
   .chip button:hover{color:var(--red)}
-  /* one roster person: name, three role pickers, and up to two auto-fill exceptions */
+  /* one roster person: name, a ranked skill list, and up to two auto-fill exceptions */
   .rmember{background:var(--panel2);border:1px solid var(--edge2);border-radius:8px;padding:9px 12px;
     display:flex;flex-direction:column;gap:7px}
   .rmember-top{display:flex;align-items:center;gap:10px}
   .rmember-name{font-family:var(--disp);font-weight:700;font-size:16px;flex:1}
-  .rmember-roles{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .rmember-roles{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .rmember .rlhdr{width:100%;margin-bottom:1px}
+  .rmember .rlhdr .hint{text-transform:none;letter-spacing:0;font-weight:400}
+  /* one ranked skill: #, role picker, move up/down, remove */
+  .skill-row{display:inline-flex;align-items:center;gap:4px;background:var(--panel);
+    border:1px solid var(--edge2);border-radius:6px;padding:3px 5px 3px 7px}
+  .skill-row .rk{font-family:var(--disp);font-weight:800;font-size:12px;color:var(--muted);
+    min-width:14px;text-align:center}
+  .skill-mv{background:transparent;border:none;color:var(--dim);font-size:11px;line-height:1;
+    padding:2px 3px;cursor:pointer}
+  .skill-mv:hover:not(:disabled){color:var(--text)}
+  .skill-mv:disabled{opacity:.25;cursor:default}
+  .skill-rm{background:transparent;border:none;color:var(--dim);font-size:14px;line-height:.9;
+    padding:0 3px;cursor:pointer}
+  .skill-rm:hover{color:var(--red)}
+  .skill-add{align-self:center;background:transparent;border:1px dashed var(--edge2);color:var(--muted);
+    border-radius:5px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer}
+  .skill-add:hover{border-color:var(--accent,var(--amber));color:var(--text)}
   .rmember-excs{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
   .rmember-role{display:inline-flex;align-items:center;gap:6px}
   .rmember .rl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700}
@@ -1458,8 +1475,28 @@ function updateSaveChip(){
 }
 
 /* ---- Roster (people) ---- */
-/* Roster entries carry a Primary and Secondary role (an OP_ROLES key, or '').
-   Older saves were a plain list of name strings — accept those and upgrade. */
+/* Each roster entry carries an ORDERED list of skills — every role this person can
+   run, best/home role first (skills[0] = Primary, [1] = 2nd, and so on, with no cap).
+   The rank still drives auto-fill: a person is preferred in an earlier skill over a
+   later one. Older saves used three fixed columns (Primary/2nd/3rd), or were a plain
+   list of name strings — both are accepted and upgraded on load. */
+const MAX_SKILLS = 20;   // a person can list every role they're trained on
+/* Build an ordered, de-duplicated list of role values from whatever was stored:
+   the new "All Skills" string/array, or the legacy primary/secondary/tertiary fields.
+   Blanks and unknown labels are dropped. */
+function decodeSkills(o){
+  let raw;
+  if(Array.isArray(o.skills)) raw = o.skills;
+  else if(o.skills!=null && String(o.skills).trim()!=='') raw = String(o.skills).split(',');
+  else raw = [o.primary, o.secondary, o.tertiary];           // legacy three-column rows
+  const seen=new Set(), out=[];
+  raw.forEach(x=>{ const v=roleVal(x); if(v && !seen.has(v)){ seen.add(v); out.push(v); } });
+  return out.slice(0,MAX_SKILLS);
+}
+/* Ordered skill list -> readable, comma-separated labels for the sheet. */
+function encodeSkills(list){
+  return (Array.isArray(list)?list:[]).map(roleLabel).filter(Boolean).join(', ');
+}
 function normalizeRoster(v){
   if(!Array.isArray(v)) return [];
   const seen=new Set(), out=[];
@@ -1468,8 +1505,7 @@ function normalizeRoster(v){
     const name=String(o.name==null?'':o.name).trim(); if(!name) return;
     if(name.toLowerCase()==='[object object]') return;        // purge old corrupted rows
     const key=name.toLowerCase(); if(seen.has(key)) return; seen.add(key);
-    out.push({name, primary:roleVal(o.primary), secondary:roleVal(o.secondary),
-      tertiary:roleVal(o.tertiary), exceptions:decodeExceptions(o.exceptions)});
+    out.push({name, skills:decodeSkills(o), exceptions:decodeExceptions(o.exceptions)});
   });
   return out;
 }
@@ -1478,17 +1514,23 @@ function rosterEntry(name){ const k=String(name||'').trim().toLowerCase(); retur
 function rosterAdd(name){
   name=(name||'').trim(); if(!name) return false;
   if(roster.some(p=>p.name.toLowerCase()===name.toLowerCase())) return true;  // already there
-  roster.push({name, primary:'', secondary:'', tertiary:'', exceptions:[]}); saveRoster(); return true;
+  roster.push({name, skills:[], exceptions:[]}); saveRoster(); return true;
 }
 function rosterRemove(i){ if(i>=0 && i<roster.length){ roster.splice(i,1); saveRoster(); } }
 async function saveRoster(){
-  // Send human-readable labels so the roster Sheet stays legible (Name, Primary
-  // Role, …). Values map back to internal keys on load via roleVal/posVal.
-  const payload = roster.map(p=>({
-    name:p.name,
-    primary:roleLabel(p.primary), secondary:roleLabel(p.secondary), tertiary:roleLabel(p.tertiary),
-    exceptions:encodeExceptions(p.exceptions)
-  }));
+  // Send human-readable labels so the roster Sheet stays legible. The full ordered
+  // skill list goes in the "All Skills" column (the source of truth on load); the
+  // Primary/2nd/3rd columns are kept as a mirror of the top three, for legibility and
+  // backward compatibility with older sheets. Labels map back to keys on load.
+  const payload = roster.map(p=>{
+    const sk = (p.skills||[]).filter(Boolean);
+    return {
+      name:p.name,
+      skills:encodeSkills(sk),
+      primary:roleLabel(sk[0]), secondary:roleLabel(sk[1]), tertiary:roleLabel(sk[2]),
+      exceptions:encodeExceptions(p.exceptions)
+    };
+  });
   try{ await Store.setRoster(payload); }
   catch(e){ alert('Could not save the roster: '+(e && e.message ? e.message : e)); }
 }
@@ -1645,7 +1687,7 @@ function unavailableForLines(){
 /* Best tier (1=Primary, 2=Secondary, 3=Tertiary) at which this person's role
    staffs the given line position, or 0 if none of their roles cover it. */
 function posTier(p, posKey){
-  const roles=[p.primary, p.secondary, p.tertiary];
+  const roles = (p && Array.isArray(p.skills)) ? p.skills : [];
   for(let t=0;t<roles.length;t++){ if(rolePos(roles[t])===posKey) return t+1; }
   return 0;
 }
@@ -2265,11 +2307,19 @@ function renderEdit(){
 /* The People / Roster editor markup — its own screen (the Edit Roster button). */
 function rosterEditorHTML(){
   const uniqLineNos = [...new Set(board.lines.map(l=>String(l.lineNo||'').trim()).filter(Boolean))];
-  const roleSel=(i,field,cur)=>{
+  const roleSel=(i,slot,cur)=>{
     let o=`<option value="">—</option>`;
     ROLE_CATALOG.forEach(r=>{ o+=`<option value="${r.v}" ${r.v===cur?'selected':''}>${esc(r.label)}</option>`; });
-    return `<select data-roleidx="${i}" data-rolefield="${field}">${o}</select>`;
+    return `<select data-skillidx="${i}" data-skillslot="${slot}">${o}</select>`;
   };
+  /* One ranked skill row: rank number, role picker, move up/down, remove. */
+  const skillRow=(i,j,v,last)=>`<span class="skill-row">
+      <span class="rk">${j+1}</span>
+      ${roleSel(i,j,v)}
+      <button class="skill-mv" data-skillmv="${i}" data-skillslot="${j}" data-skilldir="-1" ${j===0?'disabled':''} title="Move up">▲</button>
+      <button class="skill-mv" data-skillmv="${i}" data-skillslot="${j}" data-skilldir="1" ${last?'disabled':''} title="Move down">▼</button>
+      <button class="skill-rm" data-skillrm="${i}" data-skillslot="${j}" title="Remove this skill">✕</button>
+    </span>`;
   const excLineSel=(i,j,cur)=>{
     let o=`<option value="">All lines</option>`;
     const list=uniqLineNos.slice(); if(cur && !list.includes(cur)) list.push(cur);
@@ -2297,9 +2347,9 @@ function rosterEditorHTML(){
             <button class="rmname" data-ri="${i}" title="Remove ${esc(p.name)}">×</button>
           </div>
           <div class="rmember-roles">
-            <span class="rmember-role"><span class="rl">Primary</span>${roleSel(i,'primary',p.primary)}</span>
-            <span class="rmember-role"><span class="rl">2nd</span>${roleSel(i,'secondary',p.secondary)}</span>
-            <span class="rmember-role"><span class="rl">3rd</span>${roleSel(i,'tertiary',p.tertiary)}</span>
+            <span class="rl rlhdr">Skills <span class="hint">ranked — #1 is their home role</span></span>
+            ${(p.skills&&p.skills.length?p.skills:['']).map((v,j,a)=>skillRow(i,j,v,j===a.length-1)).join('')}
+            <button class="skill-add" data-skilladd="${i}">＋ add skill</button>
           </div>
           <div class="rmember-excs">
             <span class="rl">Don’t auto-fill</span>
@@ -2310,7 +2360,7 @@ function rosterEditorHTML(){
       }).join('')
     : `<span class="hint">No names yet — add people below and they'll appear in every dropdown.</span>`;
   return `<div class="ecard" style="border-top-color:var(--edge)">
-    <div class="subhead">People / Roster <span class="hint">(one shared list for all days. Set each person's Primary role and a line's positions auto-fill with the best-ranked crew when you set it to Run 1st — skipping anyone absent, on vacation, or on a press.)</span></div>
+    <div class="subhead">People / Roster <span class="hint">(one shared list for all days. List every skill a person can run, ranked — #1 is their home role. A line's positions auto-fill with the best-ranked crew when you set it to Run 1st, reaching down a person's list as needed and skipping anyone absent, on vacation, or on a press.)</span></div>
     <div class="roster">${rows}</div>
     <div class="roster-add">
       <input id="newName" placeholder="Add a person's name…">
@@ -2405,9 +2455,20 @@ document.getElementById('view').addEventListener('input', e=>{
       return;
     }
   }
-  if(t.dataset.roleidx!==undefined && t.dataset.rolefield){      // roster Primary/2nd/3rd role
-    const i=+t.dataset.roleidx, f=t.dataset.rolefield;
-    if(roster[i]){ roster[i][f]=t.value; saveRoster(); }
+  if(t.dataset.skillidx!==undefined && t.dataset.skillslot!==undefined){   // roster ranked skill
+    const i=+t.dataset.skillidx, j=+t.dataset.skillslot, p=roster[i];
+    if(p){
+      if(!Array.isArray(p.skills)) p.skills=[];
+      if(t.value===''){                                          // chose "—" → drop that skill
+        if(j<p.skills.length){ p.skills.splice(j,1); saveRoster(); render(); }
+      } else {
+        p.skills[j]=t.value;
+        const before=p.skills.length;
+        p.skills=p.skills.filter((v,idx)=> idx===j || v!==t.value);  // a role appears once
+        saveRoster();
+        if(p.skills.length!==before) render();                  // renumber if a duplicate was removed
+      }
+    }
     return;
   }
   if(t.dataset.exidx!==undefined && t.dataset.exentry!==undefined && t.dataset.exfield==='line'){  // exception line
@@ -2547,6 +2608,21 @@ document.getElementById('view').addEventListener('click', async e=>{
   else if(t.dataset.gotonext!==undefined){ goDate(shiftWorkday(todayStr(),+1)); }  // jump to tomorrow's board, stay in edit
   else if(t.dataset.gototoday!==undefined){ goDate(todayStr()); }
   else if(t.dataset.ri!==undefined){ rosterRemove(+t.dataset.ri); render(); }
+  else if(t.dataset.skilladd!==undefined){                       // add a ranked skill slot
+    const p=roster[+t.dataset.skilladd];
+    if(p){ if(!Array.isArray(p.skills)) p.skills=[];
+      if(p.skills.length<MAX_SKILLS){ p.skills.push(''); saveRoster(); render(); } }
+  }
+  else if(t.dataset.skillrm!==undefined && t.dataset.skillslot!==undefined){  // remove a skill
+    const p=roster[+t.dataset.skillrm];
+    if(p && Array.isArray(p.skills)){ p.skills.splice(+t.dataset.skillslot,1); saveRoster(); render(); }
+  }
+  else if(t.dataset.skillmv!==undefined && t.dataset.skillslot!==undefined){  // reorder a skill up/down
+    const p=roster[+t.dataset.skillmv], j=+t.dataset.skillslot, k=j+(+t.dataset.skilldir);
+    if(p && Array.isArray(p.skills) && k>=0 && k<p.skills.length){
+      const tmp=p.skills[j]; p.skills[j]=p.skills[k]; p.skills[k]=tmp; saveRoster(); render();
+    }
+  }
   else if(t.dataset.exadd!==undefined){                          // add an exception entry
     const p=roster[+t.dataset.exadd];
     if(p){ if(!Array.isArray(p.exceptions)) p.exceptions=[]; p.exceptions.push({line:'',positions:[]}); saveRoster(); render(); }
