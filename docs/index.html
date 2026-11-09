@@ -2338,8 +2338,12 @@ function rosterEditorHTML(){
       <button class="exc-rm" data-exrm-person="${i}" data-exrm-entry="${j}" title="Remove this exception">×</button>
     </div>`;
   };
-  const rows = roster.length
-    ? roster.map((p,i)=>{
+  // Show people A→Z, but keep each row's data-index pointing at its real spot in
+  // `roster` so edits/removes still target the right person.
+  const ordered = roster.map((p,i)=>({p,i}))
+    .sort((a,b)=> a.p.name.toLowerCase().localeCompare(b.p.name.toLowerCase(), undefined, {numeric:true}));
+  const rows = ordered.length
+    ? ordered.map(({p,i})=>{
         const excs=(p.exceptions||[]).map((e,j)=>excEntry(i,j,e)).join('');
         return `<div class="rmember">
           <div class="rmember-top">
