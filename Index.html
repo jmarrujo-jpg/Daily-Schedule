@@ -457,6 +457,44 @@
   .roster-head{display:flex;align-items:center;gap:14px;margin-bottom:12px}
   .roster-title{font-family:var(--disp);font-weight:800;font-size:22px;letter-spacing:.03em;margin:0}
 
+  /* ===== Quick Edit (phone-first) ===== */
+  .quick-wrap{max-width:680px;margin:0 auto;padding:4px 0 24px}
+  .quick-head{text-align:center;margin:6px 0 14px}
+  .quick-date{font-family:var(--disp);font-weight:800;font-size:22px;letter-spacing:.02em}
+  .quick-sub{color:var(--muted);font-size:13px;margin-top:2px}
+  .qsec-h{font-family:var(--disp);font-weight:800;font-size:16px;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--muted);margin:18px 2px 8px}
+  .qcard{background:var(--panel2);border:1px solid var(--edge2);border-radius:12px;
+    padding:12px 13px;margin-bottom:12px}
+  .qcard-h{font-family:var(--disp);font-weight:800;font-size:17px;margin-bottom:10px;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .qline-no{font-size:19px}
+  .qline-pill{font-family:var(--disp);font-weight:800;font-size:12px;letter-spacing:.05em;
+    padding:3px 9px;border-radius:999px}
+  .qline-size{font-family:var(--mono);font-weight:700;color:var(--amber);margin-left:auto;font-size:15px}
+  .qoff{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .qoff-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+    font-weight:800;margin-bottom:6px}
+  .qhint{color:var(--dim);font-size:12px;margin-top:9px;line-height:1.4}
+  .qposes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .qpos-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    font-weight:800;margin-bottom:4px}
+  .qempty{color:var(--dim);font-size:14px;line-height:1.5;text-align:center;padding:8px 4px}
+  .quick-foot{display:flex;justify-content:center;margin-top:16px}
+  .quick-foot .btn{font-weight:700;padding:12px 18px}
+  /* big, thumb-friendly controls everywhere on the Quick screen */
+  .quick-wrap .nsel{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .quick-wrap .nsel select{flex:1;min-width:0;font-size:16px;padding:11px 10px;border-radius:8px;
+    background:var(--panel);color:var(--text);border:1px solid var(--edge2)}
+  .quick-wrap .names{display:flex;flex-direction:column;gap:2px}
+  .quick-wrap .addname{align-self:flex-start;background:transparent;border:1px dashed var(--edge2);
+    color:var(--muted);border-radius:8px;padding:9px 12px;font-size:13px;font-weight:700;cursor:pointer}
+  .quick-wrap .addname:hover{border-color:var(--amber);color:var(--text)}
+  .quick-wrap .rmname{background:transparent;border:none;color:var(--dim);font-size:22px;
+    line-height:.9;padding:0 8px;cursor:pointer}
+  .quick-wrap .rmname:hover{color:var(--red)}
+  @media(max-width:560px){ .qoff,.qposes{grid-template-columns:1fr} }
+
   /* fullscreen tweaks */
   body.fs .topbar .hide-fs{display:none}
   .foot-note{text-align:center;color:var(--dim);font-size:11px;padding:6px 0 12px;font-family:var(--mono)}
@@ -548,6 +586,7 @@
     <div class="clock mono" id="clock">--:--</div>
     <div class="seg hide-fs">
       <button id="mBoard" class="on">Board</button>
+      <button id="mQuick" title="Quick Edit — phone-friendly: mark people off &amp; swap crew">⚡ Quick</button>
       <button id="mEdit">Edit</button>
       <button id="mProducts">Products</button>
     </div>
@@ -1863,6 +1902,7 @@ function render(){
   const pt=document.getElementById('printTitle');
   if(pt) pt.innerHTML = '<img class="print-logo" src="'+LOGO_SRC+'" alt="CSC"> Daily Line Schedule — '+fmtDateLong(curDate);
   document.getElementById('mBoard').classList.toggle('on',mode==="board");
+  document.getElementById('mQuick').classList.toggle('on',mode==="quick");
   document.getElementById('mEdit').classList.toggle('on',mode==="edit");
   document.getElementById('mProducts').classList.toggle('on',mode==="products");
   updateCoChip();
@@ -1875,11 +1915,14 @@ function render(){
     fn.style.color='';
     fn.textContent=(mode==="edit"
       ? "Changes save automatically to this day. Same size for two customers? Add another product."
+      : mode==="quick"
+      ? "Quick Edit · phone-friendly · changes save automatically to this day."
       : "Board view · updates live · press ⛶ TV for fullscreen on a display") + "   ·   " + APP_VERSION;
   }
   if(mode==="board") renderBoard();
   else if(mode==="roster") renderRoster();
   else if(mode==="products") renderProducts();
+  else if(mode==="quick") renderQuick();
   else renderEdit();
 }
 
@@ -2372,6 +2415,62 @@ function rosterEditorHTML(){
     </div>
   </div>`;
 }
+/* ============================ Render: QUICK EDIT (phone-first) ============================ */
+/* A streamlined screen for the two things you do fast from a phone: mark people
+   off (Absent / Vacation) and swap who's on a line's crew. It reuses the SAME
+   controls as the full editor (identical data-attributes), so every change goes
+   through the same save + auto-restaff logic — this is just a phone-friendly layout.
+   Everything else (line status, size, products, pallets) stays in the full editor. */
+function renderQuick(){
+  if(editLockedNow()){ document.getElementById('view').innerHTML = editLockGateHTML(); return; }
+  if(pastEditLockedNow()){ document.getElementById('view').innerHTML = pastEditGateHTML(); return; }
+  commitSeededDay();     // opening an editor saves a carried-forward day even if nothing changes
+  { const s=conflictNames(); CFLICT_SET=s.alert; CAUTION_SET=s.caution; }   // fields to flag red / amber
+
+  // --- People Off: Absent + Vacation, reusing the rail's own person-pickers ---
+  const offBlock = `
+    <div class="qcard">
+      <div class="qcard-h">🚫 People Off</div>
+      <div class="qoff">
+        <div class="qoff-col"><div class="qoff-lbl">Absent</div>${staffPeopleInputs('absent')}</div>
+        <div class="qoff-col"><div class="qoff-lbl">Vacation</div>${staffPeopleInputs('vacation')}</div>
+      </div>
+      <div class="qhint">Marking someone off pulls them from their lines and auto-refills the Run&nbsp;1st crews.</div>
+    </div>`;
+
+  // --- Crew by line: every visible line that carries a crew, reusing posInputs ---
+  const crewLines = board.lines.filter(l=> !l.hidden && carriesCrew(l));
+  const crewBlock = crewLines.length
+    ? crewLines.map(l=>{
+        const idx=board.lines.indexOf(l);
+        const sd=STATUS[statusOf(l)]||STATUS[""];
+        const poses=OP_ROLES.map(([k,label])=>
+          `<div class="qpos"><div class="qpos-lbl">${esc(label)}</div>${posInputs(l,idx,k)}</div>`).join('');
+        return `<div class="qcard">
+          <div class="qcard-h qline-h">
+            <span class="qline-no">Line ${esc(l.lineNo||'?')}</span>
+            <span class="qline-pill" style="background:${sd.color};color:${sd.fg}">${esc(sd.pill)}</span>
+            <span class="qline-size">${esc(l.size||'—')}</span>
+          </div>
+          <div class="qposes">${poses}</div>
+        </div>`;
+      }).join('')
+    : `<div class="qcard"><div class="qempty">No running lines with a crew right now. Set a line to Run&nbsp;1st, Run&nbsp;2nd, Back&nbsp;Up, RWR or Mech&nbsp;Run in the full editor and it'll show here.</div></div>`;
+
+  document.getElementById('view').innerHTML = `
+    <div class="quick-wrap">
+      <div class="quick-head">
+        <div class="quick-date">${esc(fmtDateLong(curDate))}</div>
+        <div class="quick-sub">⚡ Quick Edit — tap to change. Saves automatically.</div>
+      </div>
+      ${offBlock}
+      <div class="qsec-h">👷 Crew by line</div>
+      ${crewBlock}
+      <div class="quick-foot">
+        <button class="btn" id="toFullEdit">Open full editor — status, size &amp; products →</button>
+      </div>
+    </div>`;
+}
 /* Dedicated roster screen reached from the Edit Roster button. */
 function renderRoster(){
   document.getElementById('view').innerHTML = `
@@ -2407,7 +2506,7 @@ document.getElementById('view').addEventListener('input', e=>{
     return;
   }
   if(t.dataset.varnote!==undefined){ _varNotesText=t.value; return; }        // run-notes for a new variant (remember across refreshes)
-  if(mode!=='edit' && mode!=='roster') return;  // roster screen also uses this handler (role + exception-line selects)
+  if(mode!=='edit' && mode!=='roster' && mode!=='quick') return;  // roster + Quick Edit reuse this handler (same controls)
   const li = t.getAttribute('data-line');
   if(li!==null){
     const idx=+li, l=board.lines[idx];
@@ -2601,6 +2700,7 @@ document.getElementById('view').addEventListener('click', async e=>{
   else if(t.id==='addName'){ const inp=document.getElementById('newName'); if(rosterAdd(inp&&inp.value)) render(); }
   else if(t.id==='editRoster'){ mode='roster'; render(); }
   else if(t.id==='backToEdit'){ mode='edit'; render(); }
+  else if(t.id==='toFullEdit'){ mode='edit'; render(); }
   else if(t.dataset.confirmtoday!==undefined){ editTodayConfirmed=todayStr(); render(); }  // unlock today's editor
   else if(t.dataset.confirmpast!==undefined){                       // open a 10-min window on this past day
     pastEditDate=curDate; pastEditUntil=Date.now()+PAST_EDIT_GRACE_MS;
@@ -2727,6 +2827,7 @@ document.getElementById('nextDay').onclick=()=>{ goDate(shiftWorkday(curDate,+1)
 document.getElementById('todayBtn').onclick=()=>goDate(todayStr());
 document.getElementById('datePick').onchange=e=>goDate(e.target.value);
 document.getElementById('mBoard').onclick=()=>{ hideSuggest(); mode='board'; render(); };
+document.getElementById('mQuick').onclick=()=>{ hideSuggest(); mode='quick'; render(); };
 document.getElementById('mEdit').onclick=()=>{ mode='edit'; render(); };
 document.getElementById('mProducts').onclick=()=>{ hideSuggest(); mode='products'; render(); };
 /* TV / kiosk mode: opening the page with ?tv (e.g. the display PC's kiosk shortcut)
